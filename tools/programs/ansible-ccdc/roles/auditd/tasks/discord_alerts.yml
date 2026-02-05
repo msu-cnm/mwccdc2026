@@ -1,0 +1,151 @@
+---
+# ============================================
+# DISCORD WEBHOOK INTEGRATION
+# ============================================
+
+- name: Display Discord integration header
+  ansible.builtin.debug:
+    msg:
+      - "Configuring Discord alerts..."
+      - "Webhook: configured (value hidden)"
+
+- name: Install required packages for webhook alerts (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: python3-requests
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+  when: ansible_os_family == "Debian"
+
+- name: Install required packages for webhook alerts (Fedora/RHEL) via dnf CLI
+  ansible.builtin.raw: dnf install -y python3-requests
+  become: true
+  changed_when: false
+  when: ansible_os_family == "RedHat"
+
+- name: Create audit alert script directory
+  ansible.builtin.file:
+    path: /usr/local/bin/ccdc-audit-alerts
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+
+- name: Deploy Discord webhook alert script
+  ansible.builtin.copy:
+    dest: /usr/local/bin/ccdc-audit-alerts/send-discord-alert.py
+    content: |
+      #!/usr/bin/env python3
+      """
+      CCDC Auditd → Discord Alert Sender
+      Sends audit event notifications to Discord webhook
+      """
+      import sys
+      import json
+      import requests
+      from datetime import datetime
+
+      WEBHOOK_URL = "{{ auditd_discord_webhook }}"
+      HOSTNAME = "{{ inventory_hostname }}"
+
+      def send_alert(event_type, details):
+          """Send alert to Discord"""
+          timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+          payload = {
+              "content": f"🚨 **CCDC Alert** - {HOSTNAME}",
+              "embeds": [{
+                  "title": event_type,
+                  "description": details,
+                  "color": 0xFF0000,  # Red
+                  "timestamp": datetime.utcnow().isoformat(),
+                  "footer": {"text": f"Host: {HOSTNAME}"}
+              }]
+          }
+          try:
+              response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
+              if response.status_code in [200, 204]:
+                  print(f"Alert sent: {event_type}")
+                  return 0
+              else:
+                  print(f"Failed to send alert: {response.status_code}")
+                  return 1
+          except Exception as e:
+              print(f"Error sending alert: {e}")
+              return 1
+
+      if __name__ == "__main__":
+          if len(sys.argv) < 3:
+              print("Usage: send-discord-alert.py <event_type> <details>")
+              sys.exit(1)
+          event_type = sys.argv[1]
+          details = sys.argv[2]
+          sys.exit(send_alert(event_type, details))
+    mode: '0750'
+    owner: root
+    group: root
+  become: true
+
+- name: Check Discord webhook for competition alerts
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/ccdc-audit-alerts/send-discord-alert.py
+      - Auditd Monitoring Active
+      - >-
+        Auditd monitoring has been configured on
+        {{ inventory_hostname }}.
+  register: discord_test
+  changed_when: false
+  failed_when: false
+  no_log: true
+  become: true
+
+- name: Display Discord alert check result
+  ansible.builtin.debug:
+    msg: "{{ '✅ Discord webhook ready for competition alerts' if discord_test.rc == 0 else '⚠️  Discord webhook check failed (verify webhook URL)' }}"
+
+- name: Create audit monitor cron job (hourly event summary)
+  ansible.builtin.cron:
+    name: "CCDC Audit Event Summary"
+    minute: "0"
+    hour: "*"
+    job: "/usr/local/bin/ccdc-audit-alerts/audit-summary.sh"
+    user: root
+    state: present
+  when: auditd_enable_discord_alerts | bool
+  become: true
+
+- name: Deploy audit summary script
+  ansible.builtin.copy:
+    dest: /usr/local/bin/ccdc-audit-alerts/audit-summary.sh
+    content: |
+      #!/bin/bash
+      # Hourly audit event summary
+      
+      LOG_FILE="{{ auditd_log_file }}"
+      LAST_HOUR=$(date -d '1 hour ago' +%s)
+      
+      # Count events in last hour
+      TOTAL_EVENTS=$(ausearch -ts recent | wc -l)
+      AUTH_FAILURES=$(ausearch -m USER_LOGIN -i --success no -ts recent 2>/dev/null | wc -l)
+      FILE_CHANGES=$(ausearch -k file_integrity -ts recent 2>/dev/null | wc -l)
+      PRIV_ESC=$(ausearch -k privilege_escalation -ts recent 2>/dev/null | wc -l)
+      
+      # Send summary if events detected
+      if [ $TOTAL_EVENTS -gt 0 ]; then
+          SUMMARY="**Last Hour:**\n• Total events: $TOTAL_EVENTS\n• Auth failures: $AUTH_FAILURES\n• File changes: $FILE_CHANGES\n• Priv escalation: $PRIV_ESC"
+          /usr/local/bin/ccdc-audit-alerts/send-discord-alert.py "Hourly Audit Summary" "$SUMMARY"
+      fi
+    mode: '0750'
+    owner: root
+    group: root
+  become: true
+
+- name: Display Discord integration summary
+  ansible.builtin.debug:
+    msg:
+      - "Discord integration complete:"
+      - "  • Alert script: /usr/local/bin/ccdc-audit-alerts/send-discord-alert.py"
+      - "  • Hourly summary: ENABLED"
+      - "{{ '  • Competition alert check: SENT' if discord_test.rc == 0 else '  • Competition alert check: FAILED' }}"

@@ -1,0 +1,43 @@
+# ============================================
+# FAIL2BAN JAIL CONFIGURATION
+# ============================================
+
+[DEFAULT]
+# Ban hosts for {{ ssh_hardening_fail2ban_bantime }} seconds
+bantime = {{ ssh_hardening_fail2ban_bantime }}
+
+# Check for failures within {{ ssh_hardening_fail2ban_findtime }} seconds
+findtime = {{ ssh_hardening_fail2ban_findtime }}
+
+# Maximum failures before ban
+maxretry = {{ ssh_hardening_fail2ban_maxretry }}
+
+# Email notifications
+{% if ssh_hardening_fail2ban_sendmail and ssh_hardening_fail2ban_destemail %}
+destemail = {{ ssh_hardening_fail2ban_destemail }}
+sendername = Fail2Ban-{{ inventory_hostname }}
+sender = fail2ban@{{ inventory_hostname }}
+{% else %}
+destemail = root@localhost
+{% endif %}
+
+# Actions
+action = %(action_)s
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+{% if ansible_os_family == "RedHat" %}
+# RHEL 0 / Oracle 0 use the journald
+backend = systemd
+logpath = systemd-journal
+{% else %}
+# Debian / Ubuntu use auth.log
+backend = auto
+logpath = /var/log/auth.log
+{% endif %}
+maxretry = {{ ssh_hardening_fail2ban_maxretry }}
+
+# Use iptables to block offenders
+action = %(action_mwl)s

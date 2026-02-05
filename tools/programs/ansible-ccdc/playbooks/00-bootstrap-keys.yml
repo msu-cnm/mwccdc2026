@@ -1,0 +1,67 @@
+---
+# ============================================
+# PLAYBOOK: BOOTSTRAP SSH KEYS
+# ============================================
+# Purpose:
+#   - Deploy SSH public key to all Linux hosts
+#   - Used once at the beginning of the competition
+# Assumptions:
+#   - 'sysadmin' user exists on all hosts
+#   - Password auth is temporarily enabled
+# ============================================
+
+- name: Deploy SSH keys to all Linux hosts
+  hosts: linux_servers
+  become: false
+  gather_facts: false
+
+  vars:
+    bootstrap_pubkey_path: "{{ lookup('env','HOME') }}/.ssh/ccdc_rsa.pub"
+
+  tasks:
+    - name: Display bootstrap target
+      ansible.builtin.debug:
+        msg:
+          - "Bootstrapping SSH key onto {{ inventory_hostname }}"
+          - "  • user: sysadmin"
+          - "  • key: {{ bootstrap_pubkey_path }}"
+
+    - name: Verify public key exists on control node
+      ansible.builtin.stat:
+        path: "{{ bootstrap_pubkey_path }}"
+      register: pubkey_stat
+      delegate_to: localhost
+      become: false
+      run_once: true
+      
+    - name: Fail if public key is missing
+      ansible.builtin.fail:
+        msg: "Public key not found: {{ bootstrap_pubkey_path }}"
+      when: not pubkey_stat.stat.exists
+      delegate_to: localhost
+      run_once: true
+
+    - name: Deploy SSH key
+      ansible.posix.authorized_key:
+        user: sysadmin
+        key: "{{ lookup('file', bootstrap_pubkey_path) }}"
+        state: present
+        manage_dir: true
+
+- name: Bootstrap Complete
+  hosts: localhost
+  gather_facts: false
+  become: false
+
+  tasks:
+    - name: Display next steps
+      ansible.builtin.debug:
+        msg:
+          - "╔══════════════════════════════════════════╗"
+          - "║   SSH KEY BOOTSTRAP COMPLETE             ║"
+          - "╚══════════════════════════════════════════╝"
+          - ""
+          - "Next steps:"
+          - "  1) Confirm password authentication is no longer required"
+          - "  2) Run connectivity check"
+          - "  3) Run 02-critical-path.yml"

@@ -1,0 +1,423 @@
+---
+# ---------------------------------------------------------------------------
+# Receiver resolution (normalized vars)
+# ---------------------------------------------------------------------------
+
+- name: Determine Splunk receiver host/port
+  ansible.builtin.set_fact:
+    splunk_receiver_effective_host: >-
+      {{
+        (splunk_universal_forwarder_host | default('') | trim)
+        if (splunk_universal_forwarder_host | default('') | trim) != ''
+        else (
+          (hostvars['splunk']['ansible_host']
+            | default(hostvars['splunk']['inventory_hostname'])
+            | default(''))
+          if (splunk_universal_forwarder_from_inventory | default(true) | bool and 'splunk' in hostvars)
+          else ''
+        )
+      }}
+    splunk_receiver_effective_port: "{{ splunk_universal_forwarder_port | default(9997) }}"
+  changed_when: false
+
+- name: Fail if Splunk receiver host is not defined
+  ansible.builtin.fail:
+    msg: >-
+      Splunk receiver host not set. Set splunk_universal_forwarder_host (preferred) in group vars,
+      OR ensure inventory contains a host named 'splunk' with ansible_host.
+  when: splunk_receiver_effective_host | trim == ""
+
+# ---------------------------------------------------------------------------
+# UF presence check (idempotent fast path)
+# ---------------------------------------------------------------------------
+
+- name: Check if UF is already installed
+  ansible.builtin.stat:
+    path: "{{ splunk_universal_forwarder_bin }}"
+  register: universal_forwarder_installed
+  become: true
+
+# ---------------------------------------------------------------------------
+# Package selection / source path
+# ---------------------------------------------------------------------------
+
+- name: Detect package tools (dnf/yum/apt)
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /usr/bin/dnf
+    - /usr/bin/yum
+    - /usr/bin/apt-get
+  register: _pkg_tools
+  changed_when: false
+  become: false
+
+- name: Compute UF package type (rpm vs deb)
+  ansible.builtin.set_fact:
+    _universal_forwarder_pkg_type: >-
+      {{
+        'rpm'
+        if (
+          (ansible_pkg_mgr | default('') | lower) in ['dnf','yum','zypper','rpm']
+          or (_pkg_tools.results[0].stat.exists | default(false))
+          or (_pkg_tools.results[1].stat.exists | default(false))
+        )
+        else 'deb'
+      }}
+  changed_when: false
+
+- name: Select UF download URL for platform (raw)
+  ansible.builtin.set_fact:
+    splunk_universal_forwarder_url_raw: >-
+      {{
+        splunk_universal_forwarder_rpm_url
+        if _universal_forwarder_pkg_type == 'rpm'
+        else splunk_universal_forwarder_deb_url
+      }}
+  changed_when: false
+
+- name: Normalize UF download URL + package name
+  ansible.builtin.set_fact:
+    splunk_universal_forwarder_url: "{{ splunk_universal_forwarder_url_raw | string | trim | regex_replace('^\"|\"$', '') }}"
+    splunk_universal_forwarder_pkg: "{{ (splunk_universal_forwarder_url_raw | string | trim | regex_replace('^\"|\"$', '')) | basename }}"
+  changed_when: false
+
+- name: Set UF package path (local override supported)
+  ansible.builtin.set_fact:
+    splunk_universal_forwarder_pkg_path: >-
+      {{
+        (splunk_universal_forwarder_local_pkg | default('') | trim)
+        if (splunk_universal_forwarder_local_pkg | default('') | trim) != ''
+        else "/tmp/{{ splunk_universal_forwarder_pkg }}"
+      }}
+  when: not universal_forwarder_installed.stat.exists
+  changed_when: false
+
+# ---------------------------------------------------------------------------
+# Obtain package (download only if needed)
+# ---------------------------------------------------------------------------
+
+- name: Download UF package when no local package is provided
+  ansible.builtin.get_url:
+    url: "{{ splunk_universal_forwarder_url }}"
+    dest: "/tmp/{{ splunk_universal_forwarder_pkg }}"
+    mode: "0644"
+    validate_certs: "{{ splunk_universal_forwarder_validate_certs | default(true) | bool }}"
+    timeout: 300
+  when:
+    - not universal_forwarder_installed.stat.exists
+    - (splunk_universal_forwarder_local_pkg | default('') | trim) == ''
+  become: true
+
+- name: Verify UF package exists
+  ansible.builtin.stat:
+    path: "{{ splunk_universal_forwarder_pkg_path }}"
+  register: universal_forwarder_pkg_stat
+  when: not universal_forwarder_installed.stat.exists
+  become: true
+
+- name: Fail if UF package is missing
+  ansible.builtin.fail:
+    msg: "UF package not found at {{ splunk_universal_forwarder_pkg_path }}."
+  when:
+    - not universal_forwarder_installed.stat.exists
+    - not universal_forwarder_pkg_stat.stat.exists
+
+# ---------------------------------------------------------------------------
+# Install UF
+# ---------------------------------------------------------------------------
+
+- name: Install UF (Debian/Ubuntu)
+  ansible.builtin.apt:
+    deb: "{{ splunk_universal_forwarder_pkg_path }}"
+    state: present
+  when:
+    - not universal_forwarder_installed.stat.exists
+    - _universal_forwarder_pkg_type == 'deb'
+  become: true
+
+# ---------------------------------------------------------------------------
+# Install UF (RPM path) without Python dnf bindings
+# ---------------------------------------------------------------------------
+
+- name: Install UF (RPM via rpm -Uvh)
+  ansible.builtin.command: >
+    rpm -Uvh --replacepkgs --quiet {{ splunk_universal_forwarder_pkg_path }}
+  args:
+    creates: "{{ splunk_universal_forwarder_bin }}"
+  when:
+    - not universal_forwarder_installed.stat.exists
+    - _universal_forwarder_pkg_type == 'rpm'
+  become: true
+  register: uf_rpm_install
+  changed_when: uf_rpm_install.rc == 0
+
+# Re-check UF presence after install
+- name: Re-check UF binary exists
+  ansible.builtin.stat:
+    path: "{{ splunk_universal_forwarder_bin }}"
+  register: universal_forwarder_bin_after
+  become: true
+
+- name: Fail if UF binary missing after install
+  ansible.builtin.fail:
+    msg: "UF binary not found at {{ splunk_universal_forwarder_bin }} after install."
+  when: not universal_forwarder_bin_after.stat.exists
+
+# ---------------------------------------------------------------------------
+# Detect UF service account (splunkfwd vs splunk)
+# ---------------------------------------------------------------------------
+
+- name: Get passwd database entries
+  ansible.builtin.getent:
+    database: passwd
+  register: _passwd_db
+  become: true
+
+- name: Set UF run user/group (prefer splunkfwd)
+  ansible.builtin.set_fact:
+    splunk_universal_forwarder_user_effective: >-
+      {{
+        'splunkfwd'
+        if 'splunkfwd' in _passwd_db.ansible_facts.getent_passwd
+        else ('splunk' if 'splunk' in _passwd_db.ansible_facts.getent_passwd else '')
+      }}
+    splunk_universal_forwarder_group_effective: >-
+      {{
+        'splunkfwd'
+        if 'splunkfwd' in _passwd_db.ansible_facts.getent_passwd
+        else ('splunk' if 'splunk' in _passwd_db.ansible_facts.getent_passwd else '')
+      }}
+  changed_when: false
+
+- name: Fail if no UF service user found
+  ansible.builtin.fail:
+    msg: "UF installed but no service user found (expected 'splunkfwd' or 'splunk')."
+  when: splunk_universal_forwarder_user_effective | trim == ""
+
+# ---------------------------------------------------------------------------
+# First start / license (idempotent)
+# ---------------------------------------------------------------------------
+
+- name: Start UF and accept license (first run only)
+  ansible.builtin.command:
+    cmd: "{{ splunk_universal_forwarder_bin }} start --accept-license --answer-yes --no-prompt"
+  args:
+    creates: "{{ splunk_universal_forwarder_home }}/var/log/splunk/splunkd.log"
+  become: true
+  become_user: "{{ splunk_universal_forwarder_user_effective }}"
+  changed_when: true
+  failed_when: false
+
+# ---------------------------------------------------------------------------
+# Persist across reboot (best effort)
+# ---------------------------------------------------------------------------
+
+- name: Enable UF boot-start (best effort)
+  ansible.builtin.command:
+    cmd: "{{ splunk_universal_forwarder_bin }} enable boot-start -user {{ splunk_universal_forwarder_user_effective }} --accept-license --answer-yes --no-prompt"
+  register: universal_forwarder_bootstart
+  changed_when: "'configured to start automatically' in (universal_forwarder_bootstart.stdout | lower | default(''))"
+  failed_when: false
+  become: true
+
+# ---------------------------------------------------------------------------
+# Configure outputs.conf / inputs.conf
+# ---------------------------------------------------------------------------
+
+- name: Ensure UF local config directory exists
+  ansible.builtin.file:
+    path: "{{ splunk_universal_forwarder_home }}/etc/system/local"
+    state: directory
+    owner: "{{ splunk_universal_forwarder_user_effective }}"
+    group: "{{ splunk_universal_forwarder_group_effective }}"
+    mode: "0750"
+  become: true
+
+- name: Configure outputs.conf default group
+  ansible.builtin.ini_file:
+    path: "{{ splunk_universal_forwarder_home }}/etc/system/local/outputs.conf"
+    create: true
+    section: tcpout
+    option: defaultGroup
+    value: "splunk_indexers"
+    owner: "{{ splunk_universal_forwarder_user_effective }}"
+    group: "{{ splunk_universal_forwarder_group_effective }}"
+    mode: "0600"
+  become: true
+  notify:
+    - restart splunk universal_forwarder
+    - wait for universal_forwarder healthy
+
+- name: Configure outputs.conf receiver target
+  ansible.builtin.ini_file:
+    path: "{{ splunk_universal_forwarder_home }}/etc/system/local/outputs.conf"
+    create: true
+    section: tcpout:splunk_indexers
+    option: server
+    value: "{{ splunk_receiver_effective_host }}:{{ splunk_receiver_effective_port }}"
+    owner: "{{ splunk_universal_forwarder_user_effective }}"
+    group: "{{ splunk_universal_forwarder_group_effective }}"
+    mode: "0600"
+  become: true
+  notify:
+    - restart splunk universal_forwarder
+    - wait for universal_forwarder healthy
+
+# Inputs: audit (only if file exists)
+- name: Check audit log exists
+  ansible.builtin.stat:
+    path: /var/log/audit/audit.log
+  register: audit_log
+  become: true
+
+- name: Configure audit log input (only if present)
+  ansible.builtin.blockinfile:
+    path: "{{ splunk_universal_forwarder_home }}/etc/system/local/inputs.conf"
+    create: true
+    owner: "{{ splunk_universal_forwarder_user_effective }}"
+    group: "{{ splunk_universal_forwarder_group_effective }}"
+    mode: "0600"
+    marker: "# {mark} ANSIBLE CCDC AUDIT INPUT"
+    block: |
+      [monitor:///var/log/audit/audit.log]
+      disabled = 0
+      index = {{ splunk_universal_forwarder_index }}
+      sourcetype = linux_audit
+  when:
+    - splunk_universal_forwarder_enable_audit | bool
+    - audit_log.stat.exists
+  become: true
+  notify:
+    - restart splunk universal_forwarder
+    - wait for universal_forwarder healthy
+
+# Inputs: auth (only if file exists) - keyed on pkg type to avoid os_family dependency
+- name: Check auth log exists (deb)
+  ansible.builtin.stat:
+    path: /var/log/auth.log
+  register: deb_auth_log
+  when: _universal_forwarder_pkg_type == 'deb'
+  become: true
+
+- name: Check secure log exists (rpm)
+  ansible.builtin.stat:
+    path: /var/log/secure
+  register: rh_secure_log
+  when: _universal_forwarder_pkg_type == 'rpm'
+  become: true
+
+- name: Configure auth input (deb, only if present)
+  ansible.builtin.blockinfile:
+    path: "{{ splunk_universal_forwarder_home }}/etc/system/local/inputs.conf"
+    create: true
+    owner: "{{ splunk_universal_forwarder_user_effective }}"
+    group: "{{ splunk_universal_forwarder_group_effective }}"
+    mode: "0600"
+    marker: "# {mark} ANSIBLE CCDC AUTH INPUT"
+    block: |
+      [monitor:///var/log/auth.log]
+      disabled = 0
+      index = {{ splunk_universal_forwarder_index }}
+      sourcetype = linux_secure
+  when:
+    - splunk_universal_forwarder_enable_auth | bool
+    - _universal_forwarder_pkg_type == 'deb'
+    - deb_auth_log.stat.exists
+  become: true
+  notify:
+    - restart splunk universal_forwarder
+    - wait for universal_forwarder healthy
+
+- name: Configure auth input (rpm, only if present)
+  ansible.builtin.blockinfile:
+    path: "{{ splunk_universal_forwarder_home }}/etc/system/local/inputs.conf"
+    create: true
+    owner: "{{ splunk_universal_forwarder_user_effective }}"
+    group: "{{ splunk_universal_forwarder_group_effective }}"
+    mode: "0600"
+    marker: "# {mark} ANSIBLE CCDC AUTH INPUT"
+    block: |
+      [monitor:///var/log/secure]
+      disabled = 0
+      index = {{ splunk_universal_forwarder_index }}
+      sourcetype = linux_secure
+  when:
+    - splunk_universal_forwarder_enable_auth | bool
+    - _universal_forwarder_pkg_type == 'rpm'
+    - rh_secure_log.stat.exists
+  become: true
+  notify:
+    - restart splunk universal_forwarder
+    - wait for universal_forwarder healthy
+
+# ---------------------------------------------------------------------------
+# Ownership fix (prevents SPLUNK_HOME ownership warnings + CLI weirdness)
+# ---------------------------------------------------------------------------
+
+- name: Ensure UF home ownership is correct
+  ansible.builtin.command:
+    cmd: "chown -R {{ splunk_universal_forwarder_user_effective }}:{{ splunk_universal_forwarder_group_effective }} {{ splunk_universal_forwarder_home }}"
+  become: true
+  changed_when: false
+
+# ---------------------------------------------------------------------------
+# Validation (deterministic)
+# ---------------------------------------------------------------------------
+
+- name: UF status (non-fatal, informational)
+  ansible.builtin.command:
+    cmd: "{{ splunk_universal_forwarder_bin }} status"
+  become: true
+  become_user: "{{ splunk_universal_forwarder_user_effective }}"
+  register: uf_status
+  changed_when: false
+  failed_when: false
+
+- name: Read outputs.conf
+  ansible.builtin.slurp:
+    path: "{{ splunk_universal_forwarder_home }}/etc/system/local/outputs.conf"
+  register: outputs_conf
+  become: true
+
+- name: Fail if outputs.conf does not contain receiver target
+  ansible.builtin.fail:
+    msg: "outputs.conf missing receiver {{ splunk_receiver_effective_host }}:{{ splunk_receiver_effective_port }}"
+  when: (outputs_conf.content | b64decode) is not search(splunk_receiver_effective_host ~ ':' ~ (splunk_receiver_effective_port | string))
+
+- name: Validate network path to receiver (tcp/9997)
+  ansible.builtin.wait_for:
+    host: "{{ splunk_receiver_effective_host }}"
+    port: "{{ splunk_receiver_effective_port }}"
+    timeout: 5
+  when: splunk_universal_forwarder_validate_network | bool
+  become: false
+
+- name: Write UF canary event
+  ansible.builtin.lineinfile:
+    path: /var/log/ccdc_uf_canary.log
+    create: true
+    line: "CCDC_UF_CANARY host={{ inventory_hostname }} ts={{ ansible_date_time.iso8601 }}"
+    mode: "0644"
+  become: true
+
+- name: Monitor UF canary file
+  ansible.builtin.blockinfile:
+    path: "{{ splunk_universal_forwarder_home }}/etc/system/local/inputs.conf"
+    create: true
+    owner: "{{ splunk_universal_forwarder_user_effective }}"
+    group: "{{ splunk_universal_forwarder_group_effective }}"
+    mode: "0600"
+    marker: "# {mark} ANSIBLE CCDC CANARY INPUT"
+    block: |
+      [monitor:///var/log/ccdc_uf_canary.log]
+      disabled = 0
+      index = {{ splunk_universal_forwarder_index }}
+      sourcetype = ccdc_uf_canary
+  become: true
+  notify:
+    - restart splunk universal_forwarder
+    - wait for universal_forwarder healthy
+
+- name: Flush handlers (apply UF config now)
+  ansible.builtin.meta: flush_handlers

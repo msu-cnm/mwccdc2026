@@ -1,0 +1,1 @@
+Half of these are graciously garnered from Stanford <3 thank you to our californian friends

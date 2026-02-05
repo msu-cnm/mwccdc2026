@@ -1,0 +1,93 @@
+---
+# Splunk hardening (Phase 2 safe)
+# Goal: Improve safety without breaking forwarder ingestion. No TLS receiver changes here.
+
+- name: Define Splunk paths
+  ansible.builtin.set_fact:
+    splunk_home: /opt/splunk
+    splunk_bin: /opt/splunk/bin/splunk
+    splunk_receiver_port: 9997
+    splunk_mgmt_port: 8089
+    splunk_local_conf_dir: /opt/splunk/etc/system/local
+    splunk_harden_files:
+      - /opt/splunk/etc/system/local/server.conf
+      - /opt/splunk/etc/system/local/inputs.conf
+      - /opt/splunk/etc/system/local/outputs.conf
+  changed_when: false
+
+- name: Check Splunk status
+  ansible.builtin.command:
+    cmd: "{{ splunk_bin }} status"
+  become: true
+  become_user: splunk
+  register: splunk_status
+  changed_when: false
+  failed_when: false
+
+- name: Start Splunk if not running
+  ansible.builtin.command:
+    cmd: "{{ splunk_bin }} start --accept-license --answer-yes --no-prompt"
+  become: true
+  become_user: splunk
+  when: splunk_status.rc != 0
+  changed_when: true
+
+- name: Wait for management port
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ splunk_mgmt_port }}"
+    state: started
+    delay: 3
+    timeout: 180
+
+- name: Wait for receiver port
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ splunk_receiver_port }}"
+    state: started
+    delay: 3
+    timeout: 180
+
+# ---------------------------------------------------------------------------
+# Basic permissions hardening (safe)
+# ---------------------------------------------------------------------------
+
+- name: Ensure system/local directory ownership
+  ansible.builtin.file:
+    path: "{{ splunk_local_conf_dir }}"
+    state: directory
+    owner: splunk
+    group: splunk
+    mode: "0750"
+  become: true
+
+- name: Check which Splunk config files exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ splunk_harden_files }}"
+  register: splunk_conf_stats
+  become: true
+  changed_when: false
+
+- name: Ensure existing config files are not world-readable
+  ansible.builtin.file:
+    path: "{{ item.stat.path }}"
+    owner: splunk
+    group: splunk
+    mode: "0640"
+  loop: "{{ splunk_conf_stats.results }}"
+  when: item.stat.exists
+  become: true
+  notify: restart splunk safely
+
+# ---------------------------------------------------------------------------
+# Receiver sanity (safe)
+# ---------------------------------------------------------------------------
+
+- name: Confirm receiver is listening locally (9997)
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ splunk_receiver_port }}"
+    state: started
+    delay: 2
+    timeout: 60

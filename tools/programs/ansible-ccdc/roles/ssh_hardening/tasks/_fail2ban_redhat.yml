@@ -1,0 +1,29 @@
+---
+- name: Install fail2ban (Fedora) via dnf CLI
+  ansible.builtin.raw: dnf install -y fail2ban
+  become: true
+  register: fail2ban_install
+  changed_when: false
+  when: ansible_distribution == "Fedora"
+
+- name: Enable EPEL repository (RHEL family only) via dnf CLI
+  ansible.builtin.raw: dnf install -y epel-release
+  become: true
+  changed_when: false
+  when:
+    - ansible_os_family == "RedHat"
+    - ansible_distribution != "Fedora"
+
+- name: Install fail2ban (RHEL family) via dnf CLI
+  ansible.builtin.raw: dnf install -y fail2ban
+  become: true
+  register: fail2ban_install
+  changed_when: false
+  when:
+    - ansible_os_family == "RedHat"
+    - ansible_distribution != "Fedora"
+
+- name: Display fail2ban installation result
+  ansible.builtin.debug:
+    msg: "✅ fail2ban install attempted on {{ inventory_hostname }} (dnf CLI)."
+  when: fail2ban_install is defined

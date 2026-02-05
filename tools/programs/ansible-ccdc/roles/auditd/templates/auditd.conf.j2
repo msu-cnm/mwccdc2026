@@ -1,0 +1,72 @@
+# ============================================
+# AUDITD DAEMON CONFIGURATION
+# ============================================
+
+# Log file location
+log_file = {{ auditd_log_file }}
+
+# Log format (RAW or NOLOG)
+log_format = RAW
+
+# Log group (root or adm)
+log_group = root
+
+# Priority boost for auditd
+priority_boost = 4
+
+# Flush log to disk (NONE, INCREMENTAL, INCREMENTAL_ASYNC, DATA, SYNC)
+flush = INCREMENTAL_ASYNC
+
+# Frequency of explicit flushes (in records)
+freq = 50
+
+# Maximum log file size (MB)
+max_log_file = {{ auditd_max_log_file }}
+
+# Number of log files to retain
+num_logs = {{ auditd_num_logs }}
+
+# Action when max log file size is reached
+# Options: IGNORE, SYSLOG, SUSPEND, ROTATE, KEEP_LOGS
+max_log_file_action = ROTATE
+
+# Disk space monitoring
+space_left = {{ auditd_space_left }}
+space_left_action = {{ auditd_space_left_action }}
+
+# Admin space threshold
+admin_space_left = {{ auditd_admin_space_left }}
+admin_space_left_action = {{ auditd_admin_space_left_action }}
+
+# Disk full action
+disk_full_action = {{ auditd_disk_full_action }}
+disk_error_action = {{ auditd_disk_full_action }}
+
+# Use libwrap for tcp_wrappers
+use_libwrap = yes
+
+# TCP settings (for remote logging - disabled by default)
+##tcp_listen_port = 60
+tcp_listen_queue = 5
+tcp_max_per_addr = 1
+##tcp_client_ports = 1024-65535
+tcp_client_max_idle = 0
+
+# Enable audit by executable (per-exe auditing)
+enable_krb5 = no
+
+# Kerberos principal
+##krb5_principal = auditd
+
+# Email notifications (optional)
+##action_mail_acct = root
+##admin_space_left_action = EMAIL
+
+# TCP settings for remote logging
+##tcp_listen_port = 60
+
+# Disk write-back cache flush
+write_logs = yes
+
+# Name resolution
+name_format = HOSTNAME

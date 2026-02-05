@@ -1,0 +1,197 @@
+---
+# ============================================
+# CRITICAL PATH HARDENING PLAYBOOK
+# ============================================
+# Purpose: Master playbook for competition hardening
+# Runs: Pre-flight -> SSH -> Firewall -> Auditd -> Validation + reporting
+# ============================================
+
+- name: 1. Pre-Flight Checks (Localhost)
+  hosts: localhost
+  gather_facts: true
+  become: false
+
+  tasks:
+    - name: Display header
+      ansible.builtin.debug:
+        msg:
+          - "╔══════════════════════════════════════════╗"
+          - "║            CRITICAL PATH HARDENING       ║"
+          - "╚══════════════════════════════════════════╝"
+          - ""
+          - "⚠️  This will apply the FULL hardening stack:"
+          - "  1. SSH Hardening"
+          - "  2. Firewall Configuration"
+          - "  3. Auditd Monitoring"
+          - ""
+          - "Targets: {{ groups['linux_servers'] | join(', ') }}"
+          - "Prerequisites: SSH keys deployed; become creds available"
+
+    - name: Pause for confirmation
+      ansible.builtin.pause:
+        prompt: |
+
+          ⚠️  LAST CHANCE TO ABORT!
+
+          Competition safety gate before hardening.
+          Have you captured snapshots during prior local preparation?
+          Without those snapshots, you cannot rollback if locked out!
+
+          Press ENTER to continue, or Ctrl+C to abort
+      when: (confirm | default('no') | lower) != 'yes'
+
+- name: 2. Apply Full Hardening Stack & Report Summary
+  hosts: linux_servers
+  gather_facts: false
+  become: true
+
+  pre_tasks:
+    - name: Load global vault (best effort)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/vault.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Load host vault (best effort)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}/vault.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Resolve become password for this host
+      ansible.builtin.set_fact:
+        effective_become_password: >-
+          {{ vault_os_become_password
+             | default(vault_os_become_initial_password
+             | default(vault_default_password)) }}
+      no_log: true
+      tags: [always]
+
+    - name: Ensure a become password is available
+      ansible.builtin.assert:
+        that:
+          - effective_become_password is defined
+          - effective_become_password | length > 0
+        fail_msg: >-
+          Missing become password for {{ inventory_hostname }}.
+          Expected one of:
+          - vault_os_become_password (preferred, post-rotation)
+          - vault_os_become_initial_password (pre-rotation)
+          - vault_default_password (global fallback)
+      no_log: true
+      tags: [always]
+
+    - name: Set ansible_become_password for roles
+      ansible.builtin.set_fact:
+        ansible_become_password: "{{ effective_become_password }}"
+      no_log: true
+      tags: [always]
+
+    - name: Load host firewall vars
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}/firewall.yml"
+      failed_when: false
+      tags: [firewall]
+
+    - name: Gather facts (after become password resolved)
+      ansible.builtin.setup:
+      tags: [always]
+
+  roles:
+    - role: common_preflight
+      tags: [always]
+
+    - role: ssh_hardening
+      tags: [ssh]
+
+    - role: firewall
+      tags: [firewall]
+
+    - role: auditd
+      tags: [auditd]
+
+    - role: common_validation
+      tags: [always]
+    
+    - role: fim_aide
+      tags: [fim]
+      vars:
+        # Baseline creation can take several minutes on Ubuntu.
+        # Critical Path should be fast: configure + cron only.
+        fim_aide_initialize_db: false
+
+  post_tasks:
+    - name: Set timestamp
+      ansible.builtin.set_fact:
+        run_timestamp: "{{ lookup('pipe','date -Is') }}"
+      delegate_to: localhost
+      run_once: true
+      become: false
+
+
+    - name: Calculate Results
+      ansible.builtin.set_fact:
+        total_hosts_list: "{{ ansible_play_hosts_all }}"
+        completed_hosts_list: "{{ ansible_play_hosts }}"
+        missing_hosts_list: "{{ ansible_play_hosts_all | difference(ansible_play_hosts) }}"
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+    - name: Format Results
+      ansible.builtin.set_fact:
+        total_count: "{{ total_hosts_list | length }}"
+        completed_count: "{{ completed_hosts_list | length }}"
+        missing_count: "{{ missing_hosts_list | length }}"
+        completed_string: "{{ completed_hosts_list | join(', ') }}"
+        missing_string: "{{ missing_hosts_list | join(', ') }}"
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+    - name: Send Discord notification
+      ansible.builtin.include_role:
+        name: common_notify
+      vars:
+        discord_title: "🛡️ Critical Path Hardening Complete"
+        discord_description: |
+          Full stack hardening (SSH, Firewall, Auditd) has been applied.
+
+          **Total Hosts:** {{ total_count }}
+          **✅ Completed:** {{ completed_count }}
+          **❌ Missing:** {{ missing_count }}
+
+          **Completed:** {{ completed_string if completed_string else 'None' }}
+          **Missing:** {{ missing_string if missing_string else 'None' }}
+        discord_color: "{{ '3066993' if missing_count == 0 else '15158332' }}"
+        discord_webhook_effective: "{{ vault_discord_webhook_url | default(lookup('env','DISCORD_WEBHOOK_URL'), true) }}"
+        discord_webhook_url: "{{ discord_webhook_effective }}"
+      run_once: true
+      when:
+        - discord_webhook_effective is defined
+        - discord_webhook_effective | length > 0
+        - "'YOUR_WEBHOOK' not in discord_webhook_effective"
+      no_log: true
+
+    - name: Display final summary
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔══════════════════════════════════════════╗"
+          - "║           CRITICAL PATH COMPLETE         ║"
+          - "╚══════════════════════════════════════════╝"
+          - ""
+          - "Total hosts: {{ total_count }}"
+          - "✅ Completed: {{ completed_count }}"
+          - "❌ Missing: {{ missing_count }}"
+          - ""
+          - "Next steps:"
+          - "  1. Verify scored services (curl, telnet, etc.)"
+          - "  2. Check audit logs: ansible all -m command -a 'ausearch -ts recent' -b"
+          - "  3. Capture snapshots if available: 'Post-Critical-Path'"
+          - "  4. Commit changes: git commit -m 'Critical path hardening'"
+      run_once: true
+      delegate_to: localhost
+      become: false

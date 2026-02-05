@@ -1,0 +1,83 @@
+---
+# ============================================
+# SSH HARDENING ROLE - DEFAULT VARIABLES
+# ============================================
+# SSH service name (varies by OS)
+ssh_hardening_service_name: "{{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
+
+# SSH configuration file path
+ssh_hardening_config_path: /etc/ssh/sshd_config
+
+# Lock root account (disable password login entirely)
+ssh_hardening_lock_root_account: true
+
+ssh_hardening_set_root_nologin: false
+
+# Disable password authentication (key-only)
+ssh_hardening_disable_password_auth: true
+
+# Force hardening even without SSH keys (DANGEROUS!)
+ssh_hardening_force_no_keys: false
+
+# Disable X11 forwarding
+ssh_hardening_disable_x11: true
+
+# Maximum authentication attempts before disconnect
+ssh_hardening_max_auth_tries: 3
+
+# Client connection keep-alive (seconds)
+ssh_hardening_client_alive_interval: 300
+
+# Maximum client alive count before disconnect
+ssh_hardening_client_alive_count_max: 2
+
+# Grace time for login before disconnect (seconds)
+ssh_hardening_login_grace_time: 60
+
+# Maximum pending unauthenticated connections
+ssh_hardening_max_startups: "10:30:60"
+
+# Strong ciphers (modern, secure algorithms)
+ssh_hardening_ciphers:
+  - chacha20-poly1305@openssh.com
+  - aes256-gcm@openssh.com
+  - aes128-gcm@openssh.com
+  - aes256-ctr
+  - aes192-ctr
+  - aes128-ctr
+
+# Strong MACs (message authentication codes)
+ssh_hardening_macs:
+  - hmac-sha2-512-etm@openssh.com
+  - hmac-sha2-256-etm@openssh.com
+  - hmac-sha2-512
+  - hmac-sha2-256
+
+# Strong key exchange algorithms
+ssh_hardening_kex_algorithms:
+  - curve25519-sha256
+  - curve25519-sha256@libssh.org
+  - diffie-hellman-group-exchange-sha256
+  - diffie-hellman-group16-sha512
+  - diffie-hellman-group18-sha512
+
+# Enable fail2ban for SSH protection
+ssh_hardening_enable_fail2ban: true
+
+# Ban time (seconds) - 10 minutes
+ssh_hardening_fail2ban_bantime: 600
+
+# Find time window (seconds) - 10 minutes
+ssh_hardening_fail2ban_findtime: 600
+
+# Maximum retries before ban
+ssh_hardening_fail2ban_maxretry: 3
+
+# Action to take when ban triggers
+ssh_hardening_fail2ban_action: "iptables-multiport"
+
+# Email notifications (set to valid email or empty to disable)
+ssh_hardening_fail2ban_destemail: ""
+
+# Send email on ban?
+ssh_hardening_fail2ban_sendmail: false

@@ -1,0 +1,205 @@
+---
+# ============================================
+# AUDITD MONITORING ROLE - DEFAULT VARIABLES
+# ============================================
+
+# Service name (same on both Ubuntu and Fedora)
+auditd_service_name: auditd
+
+# Enable auditd
+auditd_enabled: true
+
+# Start auditd at boot
+auditd_start_on_boot: true
+
+# Critical files to monitor for changes
+auditd_monitored_files:
+  # SSH configuration
+  - path: /etc/ssh/sshd_config
+    key: sshd_config
+    perm: wa
+    comment: "SSH daemon configuration"
+
+  # User/group databases
+  - path: /etc/passwd
+    key: passwd_changes
+    perm: wa
+    comment: "User account database"
+
+  - path: /etc/shadow
+    key: shadow_changes
+    perm: wa
+    comment: "User password hashes"
+
+  - path: /etc/group
+    key: group_changes
+    perm: wa
+    comment: "Group database"
+
+  - path: /etc/gshadow
+    key: gshadow_changes
+    perm: wa
+    comment: "Group password hashes"
+
+  # Sudo configuration
+  - path: /etc/sudoers
+    key: sudoers_changes
+    perm: wa
+    comment: "Sudo configuration"
+
+  - path: /etc/sudoers.d
+    key: sudoers_d_changes
+    perm: wa
+    comment: "Sudo drop-in configuration"
+
+  # Network configuration (host-based firewall rules)
+  - path: /etc/ufw
+    key: ufw_changes
+    perm: wa
+    comment: "UFW firewall rules (Ubuntu)"
+
+  - path: /etc/firewalld
+    key: firewalld_changes
+    perm: wa
+    comment: "Firewalld rules (Fedora)"
+
+  # Boot directory (kernel tampering)
+  - path: /boot
+    key: boot_changes
+    perm: wa
+    comment: "Kernel and bootloader files"
+
+# Monitor sudo usage
+auditd_monitor_sudo: true
+
+# Monitor su usage
+auditd_monitor_su: true
+
+# Monitor setuid execution
+auditd_monitor_setuid: true
+
+# Monitor capability changes
+auditd_monitor_capabilities: true
+
+# Monitor SSH logins
+auditd_monitor_ssh_logins: true
+
+# Monitor failed logins
+auditd_monitor_failed_logins: true
+
+# Monitor user creation/deletion
+auditd_monitor_user_mgmt: true
+
+# Monitor group changes
+auditd_monitor_group_mgmt: true
+
+# Monitor package installation
+auditd_monitor_package_install: true
+
+# Monitor service starts/stops
+auditd_monitor_service_mgmt: true
+
+# Monitor kernel module loading
+auditd_monitor_kernel_modules: true
+
+# Monitor system time changes
+auditd_monitor_time_changes: true
+
+# Monitor file deletion in sensitive directories
+auditd_monitor_file_deletion: true
+
+# Directories to monitor for deletion
+auditd_deletion_watch_dirs:
+  - /tmp
+  - /var/tmp
+  - /home
+
+# Monitor critical directory modifications
+auditd_monitor_critical_dirs: true
+
+# Critical directories
+auditd_critical_directories:
+  - /etc
+  - /usr/bin
+  - /usr/sbin
+  - /bin
+  - /sbin
+
+# Log file location
+auditd_log_file: /var/log/audit/audit.log
+
+# Maximum log file size (MB)
+auditd_max_log_file: 100
+
+# Number of log files to retain
+auditd_num_logs: 5
+
+# Action when disk is full
+# Options: ignore, syslog, suspend, single, halt
+auditd_disk_full_action: suspend
+
+# Action when disk space is low
+auditd_space_left_action: syslog
+
+# Disk space threshold (MB)
+auditd_space_left: 75
+
+# Action when admin space is low
+auditd_admin_space_left_action: suspend
+
+# Admin space threshold (MB)
+auditd_admin_space_left: 50
+
+# Enable Discord alerts for critical events
+auditd_enable_discord_alerts: true
+
+# Discord webhook URL (from vault)
+auditd_discord_webhook: "{{ vault_discord_webhook_url }}"
+
+# Alert on privilege escalation attempts
+auditd_alert_priv_esc: true
+
+# Alert on authentication failures
+auditd_alert_auth_failures: true
+
+# Alert on file integrity violations
+auditd_alert_file_changes: true
+
+# Alert on suspicious file deletions
+auditd_alert_file_deletions: true
+
+# Enable automated evidence collection
+auditd_enable_evidence_collection: true
+
+# Evidence collection directory
+auditd_evidence_dir: /var/log/ccdc-evidence
+
+# Collect audit logs automatically
+auditd_collect_audit_logs: true
+
+# Compress evidence archives
+auditd_compress_evidence: true
+
+# Buffer size for audit events
+auditd_buffer_size: 8192
+
+# Backlog wait time (milliseconds)
+auditd_backlog_wait_time: 60000
+
+# Rate limit (events per second, 0 = unlimited)
+auditd_rate_limit: 0
+
+# Audit rules file location (platform-specific)
+auditd_rules_file: "{{ '/etc/audit/rules.d/audit.rules' if ansible_os_family == 'Debian' else '/etc/audit/rules.d/audit.rules' }}"
+
+# Auditd configuration file
+auditd_config_file: /etc/audit/auditd.conf
+
+# Package names (platform-specific)
+auditd_packages:
+  Debian:
+    - auditd
+    - audispd-plugins
+  RedHat:
+    - audit
+    - audit-libs

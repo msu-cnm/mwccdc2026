@@ -1,0 +1,78 @@
+# ============================================
+# FINAL AUDIT RULES & SYSTEM CONFIGURATION
+# ============================================
+
+# Set audit buffer size (default: 8192)
+-b {{ auditd_buffer_size }}
+
+# Set backlog wait time (milliseconds)
+--backlog_wait_time {{ auditd_backlog_wait_time }}
+
+{% if auditd_rate_limit > 0 %}
+# Rate limit (events per second)
+-r {{ auditd_rate_limit }}
+{% else %}
+# Rate limiting disabled (unlimited events)
+-r 0
+{% endif %}
+
+# Failure mode (what to do if audit can't log)
+# 0 = silent
+# 1 = printk (print to kernel log)
+# 2 = panic (halt system)
+-f 1
+
+{% if auditd_monitor_time_changes %}
+# Monitor system time changes
+-a always,exit -F arch=b64 -S adjtimex,settimeofday -k time_change
+-a always,exit -F arch=b32 -S adjtimex,settimeofday,stime -k time_change
+-a always,exit -F arch=b64 -S clock_settime -k time_change
+-a always,exit -F arch=b32 -S clock_settime -k time_change
+
+# Monitor timezone changes
+-w /etc/localtime -p wa -k time_zone_change
+{% endif %}
+
+{% if auditd_monitor_service_mgmt %}
+
+# Monitor systemctl for service starts/stops
+-w /bin/systemctl -p x -k service_management
+-w /usr/bin/systemctl -p x -k service_management
+
+# Monitor service files
+-w /etc/systemd/system -p wa -k systemd_changes
+-w /lib/systemd/system -p wa -k systemd_changes
+{% endif %}
+
+{% if auditd_monitor_package_install %}
+
+# Monitor package managers
+-w /usr/bin/apt -p x -k package_install
+-w /usr/bin/apt-get -p x -k package_install
+-w /usr/bin/dpkg -p x -k package_install
+-w /usr/bin/dnf -p x -k package_install
+-w /usr/bin/yum -p x -k package_install
+-w /usr/bin/rpm -p x -k package_install
+{% endif %}
+
+# Monitor network interface changes
+-a always,exit -F arch=b64 -S sethostname,setdomainname -k network_config
+-a always,exit -F arch=b32 -S sethostname,setdomainname -k network_config
+
+# Monitor network configuration files
+-w /etc/hosts -p wa -k network_config
+-w /etc/hostname -p wa -k network_config
+-w /etc/resolv.conf -p wa -k network_config
+-w /etc/network -p wa -k network_config
+-w /etc/sysconfig/network -p wa -k network_config
+
+# Monitor audit configuration itself
+-w /etc/audit -p wa -k audit_config
+-w /etc/audisp -p wa -k audit_config
+-w /sbin/auditctl -p x -k audit_tools
+-w /sbin/auditd -p x -k audit_tools
+
+# Lock audit configuration (prevent tampering)
+# WARNING: After this line, audit rules cannot be changed until reboot!
+# Comment out this line if you need to modify rules without rebooting
+# -e 2

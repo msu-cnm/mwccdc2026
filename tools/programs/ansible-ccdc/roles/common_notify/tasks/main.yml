@@ -1,0 +1,27 @@
+---
+# ============================================
+# COMMON DISCORD NOTIFIER
+# ============================================
+
+- name: Send Discord notification
+  ansible.builtin.uri:
+    url: "{{ discord_webhook_url }}"
+    method: POST
+    body_format: json
+    body:
+      content: "{{ discord_title | default('') }}"
+      embeds:
+        - title: "{{ discord_title | default('Ansible Run Complete') }}"
+          description: "{{ discord_description | default('No details provided.') }}"
+          color: "{{ discord_color | default('3447003') }}" # Default blue
+          footer:
+            text: "Ansible CCDC v2.0 Automation"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+    status_code: [200, 204]
+  register: discord_result
+  failed_when: false
+  changed_when: false
+  when:
+    - discord_webhook_url is defined
+    - discord_webhook_url != ""
+    - "'YOUR_WEBHOOK' not in discord_webhook_url"

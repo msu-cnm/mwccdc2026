@@ -1,0 +1,16 @@
+---
+fim_aide_paths:
+  - "/etc"
+  - "/usr/local/bin"
+  - "/usr/local/sbin"
+  - "/var/www"
+
+# Extra excludes for common churn
+fim_aide_excludes:
+  - "/var/log"
+  - "/run"
+  - "/var/run"
+  - "/tmp"
+  - "/var/tmp"
+  - "/var/cache"
+  - "/var/lib/systemd/timers"

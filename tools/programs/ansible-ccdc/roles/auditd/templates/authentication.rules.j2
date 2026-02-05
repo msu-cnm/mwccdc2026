@@ -1,0 +1,70 @@
+# ============================================
+# AUTHENTICATION MONITORING RULES
+# ============================================
+
+{% if auditd_monitor_ssh_logins %}
+
+# Monitor SSH daemon (sshd) for login attempts
+-w /usr/sbin/sshd -p x -k sshd_execution
+-w /usr/bin/sshd -p x -k sshd_execution
+
+# Monitor SSH configuration (covered in file_integrity.rules)
+# -w /etc/ssh/sshd_config -p wa -k sshd_config
+
+# Monitor user's authorized_keys
+-w /home -p wa -k ssh_authorized_keys_changes
+-w /root/.ssh -p wa -k ssh_authorized_keys_changes
+{% endif %}
+
+{% if auditd_monitor_failed_logins %}
+
+# Monitor PAM authentication failures
+-w /var/log/auth.log -p wa -k auth_failures
+-w /var/log/secure -p wa -k auth_failures
+-w /var/log/faillog -p wa -k auth_failures
+-w /var/log/lastlog -p wa -k auth_failures
+
+# Monitor login program
+-w /bin/login -p x -k login_execution
+-w /usr/bin/login -p x -k login_execution
+{% endif %}
+
+{% if auditd_monitor_user_mgmt %}
+
+# Monitor user creation/modification/deletion
+-w /usr/sbin/useradd -p x -k user_add
+-w /usr/sbin/usermod -p x -k user_mod
+-w /usr/sbin/userdel -p x -k user_del
+
+# Monitor password changes
+-w /usr/bin/passwd -p x -k password_change
+-w /usr/sbin/chpasswd -p x -k password_change
+
+# Monitor user database changes (covered in file_integrity.rules)
+# -w /etc/passwd -p wa -k passwd_changes
+# -w /etc/shadow -p wa -k shadow_changes
+{% endif %}
+
+{% if auditd_monitor_group_mgmt %}
+
+# Monitor group creation/modification/deletion
+-w /usr/sbin/groupadd -p x -k group_add
+-w /usr/sbin/groupmod -p x -k group_mod
+-w /usr/sbin/groupdel -p x -k group_del
+
+# Monitor group membership changes
+-w /usr/sbin/usermod -p x -k group_membership
+
+# Monitor group database changes (covered in file_integrity.rules)
+# -w /etc/group -p wa -k group_changes
+# -w /etc/gshadow -p wa -k gshadow_changes
+{% endif %}
+
+# Monitor PAM configuration changes
+-w /etc/pam.d -p wa -k pam_config
+-w /etc/security -p wa -k security_config
+
+# Monitor session initiation
+-w /var/run/utmp -p wa -k session_tracking
+-w /var/log/wtmp -p wa -k session_tracking
+-w /var/log/btmp -p wa -k session_tracking

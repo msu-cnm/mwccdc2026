@@ -1,0 +1,54 @@
+---
+# Firewall hardening entrypoint (profile-driven).
+# This repo keeps host_vars at repo root (not inventory-relative), so we include them explicitly.
+
+- name: Load host firewall vars (best effort)
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}/firewall.yml"
+  failed_when: false
+  tags: [firewall]
+  become: false
+
+- name: Display firewall hardening header
+  ansible.builtin.debug:
+    msg:
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "🔥 Firewall Hardening: {{ inventory_hostname }}"
+      - "Backend: {{ firewall_backend }}"
+      - "Profile: {{ firewall_profile | default('baseline') }}"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# ============================================
+# Kernel Security Settings (optional)
+# ============================================
+
+- name: Include kernel hardening tasks
+  ansible.builtin.include_tasks: kernel_hardening.yml
+  when: firewall_enable_kernel_hardening | bool
+
+# ============================================
+# UFW Configuration (Debian/Ubuntu)
+# ============================================
+
+- name: Include UFW configuration tasks
+  ansible.builtin.include_tasks: ufw.yml
+  when:
+    - firewall_backend == "ufw"
+    - firewall_enabled | bool
+
+# ============================================
+# Firewalld Configuration (RedHat/Fedora)
+# ============================================
+
+- name: Include firewalld configuration tasks
+  ansible.builtin.include_tasks: firewalld.yml
+  when:
+    - firewall_backend == "firewalld"
+    - firewall_enabled | bool
+
+- name: Display completion message
+  ansible.builtin.debug:
+    msg:
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "✅ Firewall Hardening Complete: {{ inventory_hostname }}"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -1,0 +1,96 @@
+---
+# Deploy Splunk SimpleXML dashboard via Splunk REST (data/ui/views)
+# NOTE: /data/ui/views expects XML view content (SimpleXML), NOT Dashboard Studio JSON.
+
+- name: Compute dashboard defaults
+  ansible.builtin.set_fact:
+    _splunk_dashboard_app: "{{ splunk_dashboard_app | default('search') }}"
+    _splunk_dashboard_name: "{{ splunk_dashboard_name | default('ccdc_dashboard') }}"
+  changed_when: false
+
+- name: Build Splunk views endpoint
+  ansible.builtin.set_fact:
+    splunk_views_base: "https://127.0.0.1:8089/servicesNS/nobody/{{ _splunk_dashboard_app }}/data/ui/views"
+  changed_when: false
+
+- name: Read dashboard SimpleXML from controller (repo docs/)
+  ansible.builtin.set_fact:
+    dashboard_xml: "{{ lookup('file', playbook_dir ~ '/../docs/ccdc_dashboard.xml') }}"
+  no_log: true
+  changed_when: false
+
+- name: Assert dashboard XML looks like SimpleXML
+  ansible.builtin.assert:
+    that:
+      - dashboard_xml is defined
+      - dashboard_xml | length > 0
+      - "'<dashboard' in dashboard_xml"
+      - "'</dashboard>' in dashboard_xml"
+    fail_msg: >-
+      docs/ccdc_dashboard.xml is missing or not valid SimpleXML.
+      Ensure the file exists and contains a <dashboard>...</dashboard> root element.
+  changed_when: false
+
+- name: Check if dashboard already exists
+  ansible.builtin.uri:
+    url: "{{ splunk_views_base }}/{{ _splunk_dashboard_name }}"
+    method: GET
+    user: admin
+    password: "{{ vault_splunk_admin_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    status_code: [200, 404, 401, 403]
+  register: dash_get
+  changed_when: false
+  no_log: true
+
+- name: Fail if Splunk auth is not working for dashboard deployment
+  ansible.builtin.fail:
+    msg: >-
+      Unable to access Splunk views endpoint (HTTP {{ dash_get.status }}).
+      Verify Splunk is running and vault_splunk_admin_password is correct.
+  when: dash_get.status in [401, 403]
+
+- name: Extract current dashboard content (if present)
+  ansible.builtin.set_fact:
+    dash_current_xml: "{{ (dash_get.json.entry[0].content['eai:data']) | default('') }}"
+  changed_when: false
+  when: dash_get.status == 200
+  no_log: true
+
+- name: Create dashboard (if missing)
+  ansible.builtin.uri:
+    url: "{{ splunk_views_base }}"
+    method: POST
+    user: admin
+    password: "{{ vault_splunk_admin_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: form-urlencoded
+    body:
+      name: "{{ _splunk_dashboard_name }}"
+      "eai:data": "{{ dashboard_xml }}"
+    status_code: [200, 201]
+  when: dash_get.status == 404
+  register: dash_create
+  changed_when: true
+  no_log: true
+
+- name: Update dashboard (only if content differs)
+  ansible.builtin.uri:
+    url: "{{ splunk_views_base }}/{{ _splunk_dashboard_name }}"
+    method: POST
+    user: admin
+    password: "{{ vault_splunk_admin_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: form-urlencoded
+    body:
+      "eai:data": "{{ dashboard_xml }}"
+    status_code: [200, 201]
+  when:
+    - dash_get.status == 200
+    - dash_current_xml != dashboard_xml
+  register: dash_update
+  changed_when: true
+  no_log: true

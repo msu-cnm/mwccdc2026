@@ -1,0 +1,72 @@
+---
+# ============================================
+# Purpose:
+#   Create the initial AIDE database (baseline) for each host.
+#   This can take several minutes, especially on Ubuntu.
+# ============================================
+
+
+- name: Create AIDE baselines (may take a while)
+  hosts: linux_servers
+  gather_facts: false
+  become: false
+
+  pre_tasks:
+    - name: Load global vault (best effort)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all/vault.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Load host vault (best effort)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}/vault.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Resolve become password for this host
+      ansible.builtin.set_fact:
+        effective_become_password: >-
+          {{ vault_os_become_password
+             | default(vault_os_become_initial_password
+             | default(vault_default_password)) }}
+      no_log: true
+      tags: [always]
+
+    - name: Ensure a become password is available
+      ansible.builtin.assert:
+        that:
+          - effective_become_password is defined
+          - effective_become_password | length > 0
+        fail_msg: >-
+          Missing become password for {{ inventory_hostname }}.
+          Expected one of:
+          - vault_os_become_password (preferred, post-rotation)
+          - vault_os_become_initial_password (pre-rotation)
+          - vault_default_password (global fallback)
+      no_log: true
+      tags: [always]
+
+    - name: Set ansible_become_password for roles
+      ansible.builtin.set_fact:
+        ansible_become_password: "{{ effective_become_password }}"
+      no_log: true
+      tags: [always]
+
+    - name: Create AIDE baselines (may take a while)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}/fim.yml"
+      failed_when: false
+      tags: [fim]
+
+    - name: Gather facts (after become password resolved)
+      ansible.builtin.setup:
+      tags: [always]
+
+  roles:
+    - role: fim_aide
+      tags: [fim, fim_baseline]
+      vars:
+        fim_aide_initialize_db: true

@@ -1,0 +1,26 @@
+---
+# ssh hardening role
+
+- name: Display SSH hardening header
+  ansible.builtin.debug:
+    msg:
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "🔐 SSH Hardening: {{ inventory_hostname }}"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+- name: Include root hardening tasks
+  ansible.builtin.include_tasks: root_hardening.yml
+
+- name: Include SSH daemon configuration tasks
+  ansible.builtin.include_tasks: sshd_config.yml
+
+- name: Include fail2ban tasks
+  ansible.builtin.include_tasks: fail2ban.yml
+  when: ssh_hardening_enable_fail2ban | bool
+
+- name: Display completion message
+  ansible.builtin.debug:
+    msg:
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "✅ SSH Hardening Complete: {{ inventory_hostname }}"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -1,0 +1,25 @@
+# ============================================
+# FILE INTEGRITY MONITORING RULES
+# ============================================
+
+{% for item in auditd_monitored_files %}
+# {{ item.comment }}
+-w {{ item.path }} -p {{ item.perm }} -k {{ item.key }}
+
+{% endfor %}
+
+{% if auditd_monitor_critical_dirs %}
+{% for dir in auditd_critical_directories %}
+# Monitor {{ dir }} for changes (recursive)
+-w {{ dir }} -p wa -k critical_dir_changes
+
+{% endfor %}
+{% endif %}
+
+{% if auditd_monitor_file_deletion %}
+{% for dir in auditd_deletion_watch_dirs %}
+# Monitor file deletions in {{ dir }}
+-a always,exit -F dir={{ dir }} -F perm=x -F auid>=1000 -F auid!=unset -k file_deletion
+
+{% endfor %}
+{% endif %}

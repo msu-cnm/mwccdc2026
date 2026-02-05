@@ -1,0 +1,23 @@
+---
+fim_aide_paths:
+  - "/etc"
+  - "/usr/share/roundcube"
+  - "/usr/share/roundcubemail"
+  - "/var/www"
+  - "/usr/local/bin"
+  - "/usr/local/sbin"
+
+fim_aide_excludes:
+  - "/var/lib/roundcube"
+  - "/var/lib/php/sessions"
+  - "/var/cache"
+  - "/var/log"
+  - "/run"
+  - "/var/run"
+  - "/tmp"
+  - "/var/tmp"
+  - "/var/spool"
+  - "/var/mail"
+  - "/var/vmail"
+  - "/var/lib/dovecot"
+  - "/var/lib/systemd/timers"

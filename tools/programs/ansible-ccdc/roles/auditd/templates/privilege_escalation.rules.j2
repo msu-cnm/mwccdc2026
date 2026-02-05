@@ -1,0 +1,61 @@
+# ============================================
+# PRIVILEGE ESCALATION MONITORING RULES
+# ============================================
+
+{% if auditd_monitor_sudo %}
+
+# Monitor sudo execution
+-a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=unset -F key=sudo_execution
+-a always,exit -F arch=b32 -S execve -F euid=0 -F auid>=1000 -F auid!=unset -F key=sudo_execution
+
+# Monitor sudoers file modifications (covered in file_integrity.rules)
+# -w /etc/sudoers -p wa -k sudoers_changes
+{% endif %}
+
+{% if auditd_monitor_su %}
+
+# Monitor su command execution
+-w /bin/su -p x -k su_execution
+-w /usr/bin/su -p x -k su_execution
+{% endif %}
+
+{% if auditd_monitor_setuid %}
+
+# Monitor execution of programs with setuid bit
+-a always,exit -F arch=b64 -S execve -F euid=0 -F uid>=1000 -C uid!=euid -k setuid_execution
+-a always,exit -F arch=b32 -S execve -F euid=0 -F uid>=1000 -C uid!=euid -k setuid_execution
+
+# Monitor setuid/setgid bit changes on files
+-a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F a2&04000 -k setuid_bit_change
+-a always,exit -F arch=b32 -S chmod,fchmod,fchmodat -F a2&04000 -k setuid_bit_change
+{% endif %}
+
+{% if auditd_monitor_capabilities %}
+
+# Monitor capability changes (setcap, getcap)
+-a always,exit -F arch=b64 -S setxattr,lsetxattr,fsetxattr -F auid>=1000 -F auid!=unset -k capability_changes
+-a always,exit -F arch=b32 -S setxattr,lsetxattr,fsetxattr -F auid>=1000 -F auid!=unset -k capability_changes
+{% endif %}
+
+{% if auditd_monitor_kernel_modules %}
+# Monitor kernel module insertion
+-a always,exit -F arch=b64 -S init_module,finit_module -k kernel_module_load
+-a always,exit -F arch=b32 -S init_module,finit_module -k kernel_module_load
+
+# Monitor kernel module deletion
+-a always,exit -F arch=b64 -S delete_module -k kernel_module_unload
+-a always,exit -F arch=b32 -S delete_module -k kernel_module_unload
+
+# Monitor insmod/rmmod/modprobe
+-w /sbin/insmod -p x -k kernel_module_tools
+-w /sbin/rmmod -p x -k kernel_module_tools
+-w /sbin/modprobe -p x -k kernel_module_tools
+{% endif %}
+
+# Monitor process priority changes (nice, renice)
+-a always,exit -F arch=b64 -S setpriority -k priority_changes
+-a always,exit -F arch=b32 -S setpriority -k priority_changes
+
+# Monitor user/group ID changes
+-a always,exit -F arch=b64 -S setuid,setgid,setreuid,setregid,setresuid,setresgid -k privilege_escalation
+-a always,exit -F arch=b32 -S setuid,setgid,setreuid,setregid,setresuid,setresgid -k privilege_escalation

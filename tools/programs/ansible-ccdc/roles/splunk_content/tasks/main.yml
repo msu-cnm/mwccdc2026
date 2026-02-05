@@ -1,0 +1,5 @@
+---
+# Splunk content deployment (dashboards, saved searches, etc.)
+
+- name: Deploy CCDC dashboard
+  ansible.builtin.import_tasks: dashboard.yml

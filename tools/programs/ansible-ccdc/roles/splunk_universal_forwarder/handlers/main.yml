@@ -1,0 +1,21 @@
+---
+- name: restart splunk universal_forwarder
+  ansible.builtin.command:
+    cmd: "{{ splunk_universal_forwarder_bin }} restart"
+  become: true
+  become_user: "{{ splunk_universal_forwarder_user_effective }}"
+  register: uf_restart
+  changed_when: true
+  failed_when: false
+
+- name: wait for universal_forwarder healthy
+  ansible.builtin.command:
+    cmd: "{{ splunk_universal_forwarder_bin }} status"
+  become: true
+  become_user: "{{ splunk_universal_forwarder_user_effective }}"
+  register: uf_status_wait
+  changed_when: false
+  retries: 20
+  delay: 3
+  until: uf_status_wait.stdout is search("splunkd is running")
+  failed_when: false

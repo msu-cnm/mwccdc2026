@@ -1,0 +1,18 @@
+---
+fim_aide_paths:
+  - "/etc"
+  - "/usr/local/bin"
+  - "/usr/local/sbin"
+  - "/opt/splunk/etc"
+  - "/opt/splunk/bin"
+
+fim_aide_excludes:
+  - "/var/log"
+  - "/run"
+  - "/var/run"
+  - "/tmp"
+  - "/var/tmp"
+  - "/var/cache"
+  - "/var/lib/systemd/timers"
+  - "/opt/splunk/var"
+  - "/opt/splunkforwarder/var"

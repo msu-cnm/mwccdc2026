@@ -1,0 +1,53 @@
+---
+# sshd configuration tasks
+
+- name: Check for authorized_keys for the remote user
+  ansible.builtin.stat:
+    path: "/home/{{ ansible_user }}/.ssh/authorized_keys"
+  register: authorized_keys_stat
+  become: true
+  when: ssh_hardening_disable_password_auth | bool
+
+- name: Refuse to disable password auth when no authorized_keys present
+  ansible.builtin.fail:
+    msg: >-
+      Refusing to set PasswordAuthentication no because
+      /home/{{ ansible_user }}/.ssh/authorized_keys does not exist.
+      Set ssh_hardening_force_no_keys=true to override (dangerous).
+  when:
+    - ssh_hardening_disable_password_auth | bool
+    - not ssh_hardening_force_no_keys | bool
+    - not authorized_keys_stat.stat.exists
+
+- name: Apply SSHD configuration settings
+  ansible.builtin.lineinfile:
+    path: "{{ ssh_hardening_config_path }}"
+    regexp: "{{ item.regexp if item.regexp is match('^\\^') else '^' ~ item.regexp }}"
+    line: "{{ item.line }}"
+    state: present
+    validate: "sshd -t -f %s"
+  loop:
+    # --- Authentication ---
+    - { regexp: '#?PermitRootLogin',         line: 'PermitRootLogin no' }
+    - { regexp: '#?PasswordAuthentication',  line: 'PasswordAuthentication no', condition: ssh_hardening_disable_password_auth }
+    - { regexp: '#?PubkeyAuthentication',    line: 'PubkeyAuthentication yes' }
+    - { regexp: '#?PermitEmptyPasswords',    line: 'PermitEmptyPasswords no' }
+
+    # --- Security Settings ---
+    - { regexp: '#?X11Forwarding',           line: 'X11Forwarding no', condition: ssh_hardening_disable_x11 }
+    - { regexp: '#?MaxAuthTries',            line: 'MaxAuthTries {{ ssh_hardening_max_auth_tries }}' }
+    - { regexp: '#?LoginGraceTime',          line: 'LoginGraceTime {{ ssh_hardening_login_grace_time }}' }
+    - { regexp: '#?MaxStartups',             line: 'MaxStartups {{ ssh_hardening_max_startups }}' }
+
+    # --- Client Keep-Alive ---
+    - { regexp: '#?ClientAliveInterval',     line: 'ClientAliveInterval {{ ssh_hardening_client_alive_interval }}' }
+    - { regexp: '#?ClientAliveCountMax',     line: 'ClientAliveCountMax {{ ssh_hardening_client_alive_count_max }}' }
+
+    # --- Strong Crypto ---
+    - { regexp: '#?Ciphers',                 line: 'Ciphers {{ ssh_hardening_ciphers | join(",") }}' }
+    - { regexp: '#?MACs',                    line: 'MACs {{ ssh_hardening_macs | join(",") }}' }
+    - { regexp: '#?KexAlgorithms',           line: 'KexAlgorithms {{ ssh_hardening_kex_algorithms | join(",") }}' }
+
+  notify: reload sshd
+  become: true
+  when: item.condition is not defined or item.condition | bool

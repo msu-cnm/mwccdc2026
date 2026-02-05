@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+SENDER="{{ fim_discord_sender_path }}"
+TAIL_LINES="{{ fim_discord_tail_lines }}"
+HOST="$(hostname -f 2>/dev/null || hostname)"
+CONF="{{ fim_aide_conf_path }}"
+
+DB_GZ="{{ fim_aide_db_gz }}"
+DB_PLAIN="{{ fim_aide_db_plain }}"
+STAMP="/var/lib/ccdc-fim-baseline-missing.stamp"
+
+REPORT_DIR="/var/log/aide/ccdc"
+TS="$(date -u +%Y%m%dT%H%M%SZ)"
+REPORT_FILE="${REPORT_DIR}/aide-${HOST}-${TS}.txt"
+LATEST_FILE="${REPORT_DIR}/latest-${HOST}.txt"
+
+# Must match your AIDE config's report_url target
+REPORT_URL_FILE="/var/log/aide/aide-report.log"
+
+mkdir -p "$REPORT_DIR" 2>/dev/null || true
+chmod 0750 "$REPORT_DIR" 2>/dev/null || true
+chown root:root "$REPORT_DIR" 2>/dev/null || true
+
+send_msg() {
+  local title="$1"
+  local msg="$2"
+  if [ -r "$SENDER" ]; then
+    python3 "$SENDER" "$title" "$msg" >/dev/null 2>&1 || true
+  else
+    logger -t ccdc-fim "$title - $msg"
+  fi
+}
+
+summarize_rc() {
+  local rc="$1"
+  local parts=()
+  if (( rc & 1 )); then parts+=("NEW"); fi
+  if (( rc & 2 )); then parts+=("REMOVED"); fi
+  if (( rc & 4 )); then parts+=("CHANGED"); fi
+  if [ -z "${parts[*]-}" ]; then
+    echo "NONE"
+  else
+    (IFS=','; echo "${parts[*]}")
+  fi
+}
+
+severity_for() {
+  local rc="$1"
+  if (( rc & 2 )) || (( rc & 4 )); then
+    echo "HIGH"
+  else
+    echo "MEDIUM"
+  fi
+}
+
+# Baseline missing reminder (max 1/day)
+if [ ! -f "$DB_GZ" ] && [ ! -f "$DB_PLAIN" ]; then
+  NOW_EPOCH="$(date +%s)"
+  LAST_EPOCH=0
+  if [ -f "$STAMP" ]; then
+    LAST_EPOCH="$(cat "$STAMP" 2>/dev/null || echo 0)"
+  fi
+
+  if [ $((NOW_EPOCH - LAST_EPOCH)) -ge 86400 ]; then
+    send_msg "AIDE Baseline Missing" "$(cat <<EOF
+Host: ${HOST}
+
+AIDE DB not found. Run the FIM baseline play to create it.
+Config: ${CONF}
+Artifact dir: ${REPORT_DIR}
+EOF
+)"
+    echo "$NOW_EPOCH" > "$STAMP" 2>/dev/null || true
+  fi
+  exit 0
+fi
+
+# Prevent overlap
+if command -v flock >/dev/null 2>&1; then
+  LOCK="/var/lock/ccdc-fim-aide.lock"
+  exec 9>"$LOCK"
+  flock -n 9 || exit 0
+fi
+
+OUT="$(mktemp)"
+RC=0
+cleanup() { rm -f "$OUT" 2>/dev/null || true; }
+trap cleanup EXIT
+
+# AIDE --check exit status is a bitmask:
+# 1=new files, 2=removed files, 4=changed files (can be combined up to 7).
+aide --config "$CONF" --check >"$OUT" 2>&1 || RC=$?
+
+# Helper: pick the best source of detail output (stdout first, then report_url)
+detail_source_for_tail() {
+  if [ -s "$OUT" ]; then
+    echo "$OUT"
+  elif [ -s "$REPORT_URL_FILE" ]; then
+    echo "$REPORT_URL_FILE"
+  else
+    echo "$OUT"
+  fi
+}
+
+# Write forensic artifact for any non-zero outcome (diff or error)
+if [ "$RC" -ne 0 ]; then
+  CATS="$(summarize_rc "$RC")"
+  SEV="$(severity_for "$RC")"
+
+  SUM="$(mktemp)"
+  SRC="$(detail_source_for_tail)"
+
+  # Try to extract actionable blocks (prefer OUT; if empty, use report_url)
+  if grep -qi "^changed entries" "$OUT" 2>/dev/null; then
+    awk '
+      BEGIN{p=0}
+      tolower($0) ~ /^changed entries/ {p=1; print; next}
+      p==1 {
+        if ($0 ~ /^-[- -]*$/) { print; exit }
+        print
+      }
+    ' "$OUT" > "$SUM" || true
+  elif grep -qi "^changed entries" "$REPORT_URL_FILE" 2>/dev/null; then
+    awk '
+      BEGIN{p=0}
+      tolower($0) ~ /^changed entries/ {p=1; print; next}
+      p==1 {
+        if ($0 ~ /^-[- -]*$/) { print; exit }
+        print
+      }
+    ' "$REPORT_URL_FILE" > "$SUM" || true
+  elif grep -qiE "^(added entries|removed entries|changed entries|total number of entries)" "$OUT" 2>/dev/null; then
+    grep -iE "^(total number of entries|added entries|removed entries|changed entries)" "$OUT" > "$SUM" || true
+  elif grep -qiE "^(added entries|removed entries|changed entries|total number of entries)" "$REPORT_URL_FILE" 2>/dev/null; then
+    grep -iE "^(total number of entries|added entries|removed entries|changed entries)" "$REPORT_URL_FILE" > "$SUM" || true
+  fi
+
+  # If extraction got nothing, fall back to tail of best source
+  if ! [ -s "$SUM" ] || ! grep -q '[[:alnum:]]' "$SUM"; then
+    {
+      echo "(No structured summary section found; showing tail of AIDE output/report)"
+      if [ -s "$SRC" ]; then
+        tail -n "${TAIL_LINES}" "$SRC" 2>/dev/null || true
+      else
+        echo "(No output captured from AIDE. Check AIDE config/report_url.)"
+      fi
+    } > "$SUM"
+  fi
+
+  {
+    echo "CCDC FIM (AIDE) Report"
+    echo "Timestamp (UTC): ${TS}"
+    echo "Host: ${HOST}"
+    echo "Config: ${CONF}"
+    echo "Exit code: ${RC}"
+    echo "Categories: ${CATS}"
+    echo "Severity: ${SEV}"
+    echo "Report file: ${REPORT_FILE}"
+    echo "----------------------------------------"
+    echo "Summary:"
+    cat "$SUM"
+    echo "----------------------------------------"
+    echo "Raw AIDE stdout:"
+    if [ -s "$OUT" ]; then
+      cat "$OUT"
+    else
+      echo "(stdout empty)"
+    fi
+
+    if [ -s "$REPORT_URL_FILE" ]; then
+      echo
+      echo "----------------------------------------"
+      echo "AIDE report_url output (${REPORT_URL_FILE}):"
+      tail -n "${TAIL_LINES}" "$REPORT_URL_FILE" 2>/dev/null || true
+    fi
+    echo
+  } > "$REPORT_FILE" 2>/dev/null || true
+
+  rm -f "$SUM" 2>/dev/null || true
+
+  cp -f "$REPORT_FILE" "$LATEST_FILE" 2>/dev/null || true
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$REPORT_FILE" > "${REPORT_FILE}.sha256" 2>/dev/null || true
+    sha256sum "$LATEST_FILE" > "${LATEST_FILE}.sha256" 2>/dev/null || true
+  fi
+
+  # Keep last 50 reports per host (and their hashes)
+  find "$REPORT_DIR" -maxdepth 1 -type f -name "aide-${HOST}-*.txt" \
+    -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR>50{print $2}' | xargs -r rm -f 2>/dev/null || true
+
+  find "$REPORT_DIR" -maxdepth 1 -type f -name "aide-${HOST}-*.txt.sha256" \
+    -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR>50{print $2}' | xargs -r rm -f 2>/dev/null || true
+fi
+
+# Prefer the canonical artifact; fall back to report_url; then raw OUT
+get_details() {
+  if [ -n "${REPORT_FILE:-}" ] && [ -f "$REPORT_FILE" ]; then
+    tail -n "${TAIL_LINES}" "$REPORT_FILE" 2>/dev/null || true
+  elif [ -s "$REPORT_URL_FILE" ]; then
+    tail -n "${TAIL_LINES}" "$REPORT_URL_FILE" 2>/dev/null || true
+  else
+    tail -n "${TAIL_LINES}" "$OUT" 2>/dev/null || true
+  fi
+}
+
+if [ "$RC" -ge 1 ] && [ "$RC" -le 7 ]; then
+  DETAILS="$(get_details)"
+  CATS="$(summarize_rc "$RC")"
+  SEV="$(severity_for "$RC")"
+  send_msg "AIDE Integrity Changes [${SEV}] (rc=${RC}: ${CATS})" "$(cat <<EOF
+Host: ${HOST}
+Report: ${REPORT_FILE}
+Config: ${CONF}
+
+${DETAILS}
+EOF
+)"
+elif [ "$RC" -ne 0 ]; then
+  DETAILS="$(get_details)"
+  CATS="$(summarize_rc "$RC")"
+  SEV="$(severity_for "$RC")"
+  send_msg "AIDE Check Error [${SEV}] (rc=${RC})" "$(cat <<EOF
+Host: ${HOST}
+Report: ${REPORT_FILE}
+Config: ${CONF}
+
+${DETAILS}
+EOF
+)"
+fi
+
+exit 0

@@ -1,0 +1,247 @@
+---
+# Splunk server configuration (competition-safe, first-run safe, idempotent)
+
+- name: Gather minimal facts (no sudo)
+  ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - "min"
+  become: false
+  changed_when: false
+
+- name: Define Splunk paths and settings
+  ansible.builtin.set_fact:
+    splunk_home: /opt/splunk
+    splunk_bin: /opt/splunk/bin/splunk
+    splunk_user_db: /opt/splunk/etc/passwd
+    splunk_user_seed: /opt/splunk/etc/system/local/user-seed.conf
+    splunk_mgmt_url: https://127.0.0.1:8089/services/server/info
+    splunk_mgmt_port: 8089
+    splunk_receiver_port: 9997
+  changed_when: false
+
+- name: Ensure /opt/splunk exists (no recursive ownership)
+  ansible.builtin.file:
+    path: "{{ splunk_home }}"
+    state: directory
+    owner: splunk
+    group: splunk
+    mode: "0755"
+  become: true
+
+- name: Check Splunk binary exists
+  ansible.builtin.stat:
+    path: "{{ splunk_bin }}"
+  register: splunk_bin_stat
+  become: true
+
+- name: Fail if Splunk is not installed
+  ansible.builtin.fail:
+    msg: "Splunk binary not found at {{ splunk_bin }}. Install Splunk first, then re-run."
+  when: not splunk_bin_stat.stat.exists
+
+- name: Check if Splunk user database exists
+  ansible.builtin.stat:
+    path: "{{ splunk_user_db }}"
+  register: splunk_passwd
+  become: true
+
+- name: Check if user-seed.conf already exists
+  ansible.builtin.stat:
+    path: "{{ splunk_user_seed }}"
+  register: splunk_seed_stat
+  become: true
+
+- name: Stop Splunk before first-run seeding (best effort)
+  ansible.builtin.command:
+    cmd: "{{ splunk_bin }} stop"
+  become: true
+  become_user: splunk
+  changed_when: false
+  failed_when: false
+  when:
+    - not splunk_passwd.stat.exists
+    - not splunk_seed_stat.stat.exists
+
+- name: Seed initial Splunk admin via user-seed.conf (first run only)
+  ansible.builtin.copy:
+    dest: "{{ splunk_user_seed }}"
+    owner: splunk
+    group: splunk
+    mode: "0600"
+    content: |
+      [user_info]
+      USERNAME = admin
+      PASSWORD = {{ vault_splunk_admin_password }}
+  become: true
+  no_log: true
+  register: seed_write
+  when:
+    - not splunk_passwd.stat.exists
+    - not splunk_seed_stat.stat.exists
+
+- name: Start Splunk (accept license / no prompt)
+  ansible.builtin.command:
+    cmd: "{{ splunk_bin }} start --accept-license --answer-yes --no-prompt"
+  become: true
+  become_user: splunk
+  register: splunk_start
+  changed_when: "'splunkd started' in (splunk_start.stdout | lower | default('')) or 'started' in (splunk_start.stdout | lower | default(''))"
+  failed_when: false
+
+- name: Wait for Splunkd management port (8089)
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ splunk_mgmt_port }}"
+    state: started
+    delay: 3
+    timeout: 180
+
+- name: Probe Splunk management endpoint (no auth; accepts 200/401)
+  ansible.builtin.uri:
+    url: "{{ splunk_mgmt_url }}"
+    method: GET
+    validate_certs: false
+    status_code: [200, 401]
+  register: splunk_mgmt_probe
+  retries: 12
+  delay: 5
+  until: splunk_mgmt_probe.status is defined and splunk_mgmt_probe.status in [200, 401]
+  changed_when: false
+  failed_when: false
+
+- name: Re-check if Splunk user database now exists
+  ansible.builtin.stat:
+    path: "{{ splunk_user_db }}"
+  register: splunk_passwd_after
+  become: true
+
+- name: Remove user-seed.conf after initialization (best practice)
+  ansible.builtin.file:
+    path: "{{ splunk_user_seed }}"
+    state: absent
+  become: true
+  when:
+    - splunk_passwd_after.stat.exists
+    - splunk_seed_stat.stat.exists or (seed_write is defined and seed_write is changed)
+
+- name: Verify vaulted Splunk admin password works (retry for startup races)
+  ansible.builtin.uri:
+    url: "{{ splunk_mgmt_url }}"
+    method: GET
+    user: admin
+    password: "{{ vault_splunk_admin_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    status_code: 200
+  register: splunk_admin_verify
+  retries: 8
+  delay: 5
+  until: (splunk_admin_verify.status | default(0)) == 200
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Rotate Splunk admin password from initial/default (only if needed)
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:8089/services/authentication/users/admin"
+    method: POST
+    user: admin
+    password: "{{ vault_splunk_admin_initial_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: form-urlencoded
+    body:
+      password: "{{ vault_splunk_admin_password }}"
+      oldpassword: "{{ vault_splunk_admin_initial_password }}"
+    status_code: [200, 201]
+  register: splunk_pw_change
+  changed_when: true
+  failed_when: false
+  no_log: true
+  when: (splunk_admin_verify.status | default(0)) != 200
+
+- name: Re-verify vaulted Splunk admin password works (after rotation attempt)
+  ansible.builtin.uri:
+    url: "{{ splunk_mgmt_url }}"
+    method: GET
+    user: admin
+    password: "{{ vault_splunk_admin_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    status_code: 200
+  register: splunk_admin_verify_after
+  retries: 8
+  delay: 5
+  until: (splunk_admin_verify_after.status | default(0)) == 200
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Fail if Splunk admin credentials are not valid
+  ansible.builtin.fail:
+    msg: >-
+      Unable to authenticate to Splunk as admin using the vaulted password,
+      and unable to rotate from vault_splunk_admin_initial_password.
+      Fix manually, then rerun.
+  when: (splunk_admin_verify_after.status | default(0)) != 200
+
+- name: Enable Splunk boot-start (best effort)
+  ansible.builtin.command:
+    cmd: "{{ splunk_bin }} enable boot-start -user splunk --accept-license --answer-yes --no-prompt"
+  become: true
+  register: splunk_bootstart
+  changed_when: "'configured to start automatically' in (splunk_bootstart.stdout | lower | default(''))"
+  failed_when: false
+  no_log: true
+
+- name: Check if receiver port is already listening (9997)
+  ansible.builtin.command:
+    cmd: "ss -lnt 'sport = :{{ splunk_receiver_port }}'"
+  register: splunk_9997_check
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Set receiver_listening fact
+  ansible.builtin.set_fact:
+    receiver_listening: "{{ (splunk_9997_check.stdout | default('') | trim) | length > 0 }}"
+  changed_when: false
+
+- name: Enable Splunk receiving on 9997 (only if not already listening)
+  ansible.builtin.command:
+    cmd: >-
+      {{ splunk_bin }} enable listen {{ splunk_receiver_port }}
+      -auth "admin:{{ vault_splunk_admin_password }}"
+  become: true
+  become_user: splunk
+  register: splunk_enable_listen
+  changed_when: true
+  failed_when: false
+  no_log: true
+  when: not receiver_listening
+
+- name: Restart Splunk to apply receiver settings (only if we enabled it)
+  ansible.builtin.command:
+    cmd: "{{ splunk_bin }} restart"
+  become: true
+  become_user: splunk
+  changed_when: true
+  when: not receiver_listening
+
+- name: Verify receiver port is listening (9997)
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ splunk_receiver_port }}"
+    state: started
+    delay: 2
+    timeout: 90
+
+- name: Verify Splunk status
+  ansible.builtin.command:
+    cmd: "{{ splunk_bin }} status"
+  become: true
+  become_user: splunk
+  register: splunk_status
+  changed_when: false
+  failed_when: splunk_status.rc != 0

@@ -1,0 +1,14 @@
+---
+# Connection defaults for Linux targets (no secrets here)
+
+ansible_user: sysadmin
+ansible_python_interpreter: /usr/bin/python3
+
+ansible_become: true
+ansible_become_method: sudo
+ansible_become_password: "{{ vault_os_become_password | default(vault_default_password) }}"
+
+# Disable host key checking for competition environments
+ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+ansible_timeout: 10

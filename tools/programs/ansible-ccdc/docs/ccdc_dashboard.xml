@@ -1,0 +1,167 @@
+<dashboard version="1.1" theme="light">
+  <label>CCDC Dashboard</label>
+  <description></description>
+
+  <!-- Optional global picker (mostly for operator sanity); panels below use their own windows -->
+  <fieldset submitButton="false">
+    <input type="time" token="global_time">
+      <label>Global Time Range</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+
+  <!-- Row 1: Single values -->
+  <row>
+    <panel>
+      <title>Auth Failures (Last 15 Minutes)</title>
+      <single>
+        <search>
+          <query>
+index="main" ("Failed password" OR "authentication failure" OR "invalid user")
+| stats count
+          </query>
+          <earliest>-15m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="underLabel">Last 15 Minutes</option>
+      </single>
+    </panel>
+
+    <panel>
+      <title>Successful Logins (Last 15 Minutes)</title>
+      <single>
+        <search>
+          <query>
+index="main" ("Accepted password" OR "session opened for user")
+| stats count
+          </query>
+          <earliest>-15m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="underLabel">Last 15 Minutes</option>
+      </single>
+    </panel>
+
+    <panel>
+      <title>Sudo Usage (Last 15 Minutes)</title>
+      <single>
+        <search>
+          <query>
+index="main" (source="/var/log/secure" OR source="/var/log/auth.log") "sudo:"
+| stats count
+          </query>
+          <earliest>-15m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="underLabel">Last 15 Minutes</option>
+      </single>
+    </panel>
+
+    <panel>
+      <title>Service Errors (Last 60 Minutes)</title>
+      <single>
+        <search>
+          <query>
+index="main" ("error" OR "failed" OR "critical")
+| stats count
+          </query>
+          <earliest>-60m@m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="underLabel">Last 60 Minutes</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- Row 2: Tables -->
+  <row>
+    <panel>
+      <title>Top Failed Login Sources (Last 60 Minutes)</title>
+      <table>
+        <search>
+          <query>
+index="main" ("Failed password" OR "authentication failure")
+| rex field=_raw "(?&lt;src_ip&gt;\d+\.\d+\.\d+\.\d+)"
+| stats count by src_ip
+| sort - count
+| head 10
+          </query>
+          <earliest>-60m@m</earliest>
+          <latest>now</latest>
+        </search>
+      </table>
+    </panel>
+
+    <panel>
+      <title>Top Usernames Targeted (Last 60 Minutes)</title>
+      <table>
+        <search>
+          <query>
+index="main" ("Failed password" OR "invalid user")
+| rex field=_raw "for (invalid user |user )(?&lt;user&gt;\S+)"
+| stats count by user
+| sort - count
+| head 10
+          </query>
+          <earliest>-60m@m</earliest>
+          <latest>now</latest>
+        </search>
+      </table>
+    </panel>
+
+    <panel>
+      <title>Account Changes (Last 60 Minutes)</title>
+      <table>
+        <search>
+          <query>
+index="main" ("useradd" OR "usermod" OR "passwd")
+| stats count by _raw
+| head 10
+          </query>
+          <earliest>-60m@m</earliest>
+          <latest>now</latest>
+        </search>
+      </table>
+    </panel>
+  </row>
+
+  <!-- Row 3: Event lists -->
+  <row>
+    <panel>
+      <title>Recent Security Events (Last 4 Hours)</title>
+      <event>
+        <search>
+          <query>
+index="main" ("Failed password" OR "Accepted password" OR "sudo:" OR "useradd" OR "passwd")
+| sort - _time
+          </query>
+          <earliest>-4h@m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">50</option>
+        <option name="maxLines">5</option>
+      </event>
+    </panel>
+
+    <panel>
+      <title>Web/App Errors (Last 60 Minutes)</title>
+      <event>
+        <search>
+          <query>
+index="main" (source="/var/log/httpd/*" OR source="/var/log/nginx/*" OR source="/var/log/syslog")
+("error" OR "fail" OR "denied")
+| sort - _time
+          </query>
+          <earliest>-60m@m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">50</option>
+        <option name="maxLines">5</option>
+      </event>
+    </panel>
+  </row>
+
+</dashboard>

@@ -1,0 +1,25 @@
+---
+# ============================================
+# SSH HARDENING ROLE - HANDLERS
+# ============================================
+
+- name: restart sshd
+  ansible.builtin.systemd:
+    name: "{{ ssh_hardening_service_name }}"
+    state: restarted
+  listen: restart sshd
+  become: true
+
+- name: restart fail2ban
+  ansible.builtin.systemd:
+    name: fail2ban
+    state: restarted
+  listen: restart fail2ban
+  become: true
+
+- name: reload sshd
+  ansible.builtin.systemd:
+    name: "{{ ssh_hardening_service_name }}"
+    state: reloaded
+  listen: reload sshd
+  become: true

@@ -1,0 +1,214 @@
+---
+# fim/aide role tasks
+
+- name: FIM | End host early when disabled
+  ansible.builtin.meta: end_host
+  when: not (fim_aide_enabled | bool)
+
+- name: FIM | Require fim_aide_paths to be defined and non-empty
+  ansible.builtin.assert:
+    that:
+      - fim_aide_paths is defined
+      - fim_aide_paths | length > 0
+    fail_msg: "fim_aide_paths must be set per-host (tight scope). Do not monitor broad roots like '/' in competition."
+
+- name: FIM | Install AIDE (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: aide
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+  become: true
+
+- name: FIM | Install AIDE (Fedora/RHEL/Oracle) via dnf CLI
+  ansible.builtin.raw: dnf install -y aide
+  when: ansible_os_family == "RedHat"
+  become: true
+  changed_when: "'Nothing to do' not in (stdout | default(''))"
+
+- name: FIM | Ensure python3-requests installed (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: python3-requests
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+  become: true
+
+- name: FIM | Ensure python3-requests installed (Fedora/RHEL/Oracle) via dnf CLI
+  ansible.builtin.raw: dnf install -y python3-requests
+  when: ansible_os_family == "RedHat"
+  become: true
+  changed_when: "'Nothing to do' not in (stdout | default(''))"
+
+# ----------------------------
+# Ensure dirs exist
+# ----------------------------
+- name: FIM | Ensure AIDE config parent directory exists
+  ansible.builtin.file:
+    path: "{{ fim_aide_conf_path | dirname }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+
+- name: FIM | Ensure AIDE DB directory exists
+  ansible.builtin.file:
+    path: "{{ fim_aide_db_dir }}"
+    state: directory
+    mode: "0750"
+    owner: root
+    group: root
+  become: true
+
+- name: FIM | Ensure report directory exists
+  ansible.builtin.file:
+    path: /var/log/aide
+    state: directory
+    mode: "0750"
+    owner: root
+    group: root
+  become: true
+
+- name: FIM | Ensure FIM artifact directory exists
+  ansible.builtin.file:
+    path: /var/log/aide/ccdc
+    state: directory
+    mode: "0750"
+    owner: root
+    group: root
+  become: true
+
+- name: FIM | Ensure /var/lib exists (baseline stamp location)
+  ansible.builtin.file:
+    path: /var/lib
+    state: directory
+    mode: "0755"
+  become: true
+
+# ----------------------------
+# Write an authoritative minimal config
+# ----------------------------
+- name: FIM | Deploy minimal authoritative AIDE config (no distro defaults)
+  ansible.builtin.copy:
+    dest: "{{ fim_aide_conf_path }}"
+    mode: "0640"
+    owner: root
+    group: root
+    content: |
+      # ============================================
+      # CCDC FIM (AIDE) - managed by Ansible
+      # Minimal config to avoid distro-default noisy scopes.
+      # ============================================
+
+      database_in=file:{{ fim_aide_db_plain }}
+      database_out=file:{{ fim_aide_db_new_plain }}
+
+      report_url=file:/var/log/aide/aide-report.log
+
+      # Rule definition (Ubuntu-safe '+' syntax)
+      {{ fim_aide_rule }} = {{ fim_aide_rule_attrs }}
+
+      # Excludes (regex)
+      {% for e in fim_aide_excludes %}
+      !{{ e }}
+      {% endfor %}
+
+      # Monitored paths (regex) - keep tight
+      {% for p in fim_aide_paths %}
+      {{ p }}  {{ fim_aide_rule }}
+      {% endfor %}
+  become: true
+
+# ----------------------------
+# Initialize AIDE DB only if not present
+# ----------------------------
+- name: FIM | Check if AIDE DB exists (gz)
+  ansible.builtin.stat:
+    path: "{{ fim_aide_db_gz }}"
+  register: fim_aide_db_gz_stat
+  become: true
+
+- name: FIM | Check if AIDE DB exists (plain)
+  ansible.builtin.stat:
+    path: "{{ fim_aide_db_plain }}"
+  register: fim_aide_db_plain_stat
+  become: true
+
+- name: FIM | Initialize AIDE database (first run)
+  ansible.builtin.command: "aide --config {{ fim_aide_conf_path }} --init"
+  when:
+    - fim_aide_initialize_db | bool
+    - not fim_aide_db_gz_stat.stat.exists
+    - not fim_aide_db_plain_stat.stat.exists
+  register: fim_aide_init
+  changed_when: true
+  failed_when: false
+  become: true
+
+- name: FIM | Promote DB.new into place (idempotent)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ -f "{{ fim_aide_db_new_gz }}" ]; then
+      mv -f "{{ fim_aide_db_new_gz }}" "{{ fim_aide_db_gz }}"
+      chown root:root "{{ fim_aide_db_gz }}"
+      chmod 0640 "{{ fim_aide_db_gz }}"
+    elif [ -f "{{ fim_aide_db_new_plain }}" ]; then
+      mv -f "{{ fim_aide_db_new_plain }}" "{{ fim_aide_db_plain }}"
+      chown root:root "{{ fim_aide_db_plain }}"
+      chmod 0640 "{{ fim_aide_db_plain }}"
+    fi
+  args:
+    executable: /bin/bash
+  when:
+    - fim_aide_initialize_db | bool
+    - not fim_aide_db_gz_stat.stat.exists
+    - not fim_aide_db_plain_stat.stat.exists
+  changed_when: true
+  failed_when: false
+  become: true
+
+# ----------------------------
+# Deploy check script + cron
+# ----------------------------
+- name: FIM | Create FIM script directory
+  ansible.builtin.file:
+    path: "{{ fim_aide_script_dir }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+
+- name: FIM | Deploy periodic AIDE check script (Discord + artifact on diff/error)
+  ansible.builtin.template:
+    src: aide-check.sh.j2
+    dest: "{{ fim_aide_script_path }}"
+    mode: "0750"
+    owner: root
+    group: root
+  become: true
+
+- name: FIM | Create cron job for periodic AIDE checks
+  ansible.builtin.cron:
+    name: "CCDC AIDE Integrity Check"
+    minute: "{{ fim_aide_cron_minute }}"
+    hour: "{{ fim_aide_cron_hour }}"
+    user: root
+    job: "{{ fim_aide_script_path }}"
+    state: present
+  become: true
+
+- name: FIM | Display summary
+  ansible.builtin.debug:
+    msg:
+      - "FIM (AIDE) configured:"
+      - "  • Config: {{ fim_aide_conf_path }}"
+      - "  • Rule: {{ fim_aide_rule }} = {{ fim_aide_rule_attrs }}"
+      - "  • Paths: {{ fim_aide_paths | join(', ') }}"
+      - "  • Excludes: {{ fim_aide_excludes | length }} patterns"
+      - "  • Script: {{ fim_aide_script_path }}"
+      - "  • Cron: {{ fim_aide_cron_minute }} {{ fim_aide_cron_hour }}"
+      - "  • Discord sender: {{ fim_discord_sender_path }} (used if present)"

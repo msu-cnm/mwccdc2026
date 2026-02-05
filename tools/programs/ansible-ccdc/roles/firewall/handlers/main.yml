@@ -1,0 +1,32 @@
+---
+# ============================================
+# FIREWALL ROLE - HANDLERS
+# ============================================
+# Service restart/reload handlers
+# ============================================
+
+- name: restart ufw
+  ansible.builtin.systemd:
+    name: ufw
+    state: restarted
+  listen: restart ufw
+  become: true
+
+- name: reload ufw
+  ansible.builtin.command: "ufw reload"
+  listen: reload ufw
+  changed_when: true
+  become: true
+
+- name: restart firewalld
+  ansible.builtin.systemd:
+    name: firewalld
+    state: restarted
+  listen: restart firewalld
+  become: true
+
+- name: reload firewalld
+  ansible.builtin.command: "firewall-cmd --reload"
+  listen: reload firewalld
+  changed_when: true
+  become: true

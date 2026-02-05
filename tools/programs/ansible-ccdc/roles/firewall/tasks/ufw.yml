@@ -1,0 +1,220 @@
+---
+# ============================================
+# UFW CONFIGURATION (Debian/Ubuntu)
+# ============================================
+# Profile-driven allowlist:
+# - baseline/webmail/ecom/splunk profiles (from firewall_profiles)
+# - restricted ports only allowed from firewall_internal_cidrs
+# ============================================
+
+- name: Install UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+- name: Check if UFW is active
+  ansible.builtin.command: ufw status
+  register: ufw_status_raw
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Set ufw_active fact
+  ansible.builtin.set_fact:
+    ufw_active: "{{ 'Status: active' in (ufw_status_raw.stdout | default('')) }}"
+  changed_when: false
+
+# Optional reset (use only if you WANT to wipe existing rules)
+- name: Reset UFW to default (optional)
+  community.general.ufw:
+    state: reset
+  become: true
+  when: firewall_ufw_reset | default(false) | bool
+
+# Default policies (set before enable; safe even if already active)
+- name: Set default incoming policy
+  community.general.ufw:
+    direction: incoming
+    policy: "{{ firewall_default_incoming }}"
+  become: true
+
+- name: Set default outgoing policy
+  community.general.ufw:
+    direction: outgoing
+    policy: "{{ firewall_default_outgoing }}"
+  become: true
+
+- name: Set default forwarding policy
+  community.general.ufw:
+    direction: routed
+    policy: "{{ firewall_default_forward }}"
+  become: true
+
+- name: Allow ICMP echo-request (ping) inbound (UFW)
+  ansible.builtin.blockinfile:
+    path: /etc/ufw/before.rules
+    marker: "# {mark} ANSIBLE MANAGED - ICMP"
+    # NOTE: UFW's before.rules is consumed by iptables-restore.
+    # Inserting directly after "*filter" can break the ruleset because
+    # chain definitions come next. Insert before COMMIT to keep ordering safe.
+    insertbefore: "^COMMIT"
+    block: |
+      # Allow inbound ping (echo-request) so ICMP works (MWCCDC expectation)
+      -A ufw-before-input -p icmp --icmp-type echo-request -j ACCEPT
+      -A ufw-before-input -p icmp --icmp-type echo-reply -j ACCEPT
+  become: true
+  register: ufw_icmp_rules
+
+- name: Allow ICMP echo-request (ping) inbound (UFW IPv6, best effort)
+  ansible.builtin.blockinfile:
+    path: /etc/ufw/before6.rules
+    marker: "# {mark} ANSIBLE MANAGED - ICMP"
+    insertbefore: "^COMMIT"
+    block: |
+      # Allow inbound ping (echo-request) so ICMP works (MWCCDC expectation)
+      -A ufw6-before-input -p icmpv6 --icmpv6-type echo-request -j ACCEPT
+      -A ufw6-before-input -p icmpv6 --icmpv6-type echo-reply -j ACCEPT
+  become: true
+  register: ufw6_icmp_rules
+  failed_when: false
+
+# ============================================
+# Compute profile rules
+# ============================================
+
+- name: Assert firewall_profiles is valid
+  ansible.builtin.assert:
+    that:
+      - firewall_profiles is mapping
+      - "'baseline' in firewall_profiles"
+    fail_msg: "firewall_profiles is missing or invalid (expected a dict with at least 'baseline')."
+
+- name: Resolve firewall profile (strict)
+  ansible.builtin.set_fact:
+    firewall_profile_effective: "{{ firewall_profile | default('baseline') | trim }}"
+  changed_when: false
+
+- name: Fail if firewall_profile is not defined in firewall_profiles
+  ansible.builtin.fail:
+    msg: |
+      firewall_profile='{{ firewall_profile_effective }}' is not present in firewall_profiles keys:
+      {{ firewall_profiles.keys() | list }}
+  when: firewall_profile_effective not in firewall_profiles
+
+- name: Compute allowed service names and restricted ports for profile
+  ansible.builtin.set_fact:
+    firewall_allowed_service_names: "{{ firewall_profiles[firewall_profile_effective].allow_services | default([]) }}"
+    firewall_profile_restrict_ports: "{{ firewall_profiles[firewall_profile_effective].restrict_ports | default([]) }}"
+  changed_when: false
+
+- name: Build allowed ports list from catalog + additional services
+  ansible.builtin.set_fact:
+    firewall_allowed_ports: >-
+      {{
+        (
+          (firewall_service_catalog | selectattr('name','in', firewall_allowed_service_names) | list)
+          + (firewall_additional_services | default([]))
+        )
+      }}
+  changed_when: false
+
+- name: Display firewall profile summary (ufw)
+  ansible.builtin.debug:
+    msg:
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - "🔥 UFW Profile: {{ firewall_profile_effective }}"
+      - "✅ Allowed services: {{ firewall_allowed_service_names | join(', ') if firewall_allowed_service_names | length > 0 else '(none)' }}"
+      - "🔒 Restricted ports: {{ firewall_profile_restrict_ports | map(attribute='port') | list | join(', ') if firewall_profile_restrict_ports | length > 0 else '(none)' }}"
+      - "🏠 Internal CIDRs: {{ firewall_internal_cidrs | join(', ') if firewall_internal_cidrs | length > 0 else '(none)' }}"
+      - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# ALWAYS allow SSH first to prevent lockout
+- name: Allow SSH first
+  community.general.ufw:
+    rule: allow
+    port: 22
+    proto: tcp
+    comment: "SSH - management access"
+  become: true
+
+# Allow profile ports (public allowlist)
+- name: Allow profile ports
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment | default(item.name | default('allowed')) }}"
+  loop: "{{ firewall_allowed_ports }}"
+  become: true
+  when: firewall_allowed_ports | length > 0
+
+# Restrict sensitive ports to internal CIDRs only (Splunk profile, etc.)
+- name: Allow restricted ports from internal CIDRs only
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ item.0 }}"
+    port: "{{ item.1.port }}"
+    proto: "{{ item.1.proto }}"
+    comment: "Restricted {{ item.1.port }}/{{ item.1.proto }} from {{ item.0 }}"
+  loop: "{{ firewall_internal_cidrs | product(firewall_profile_restrict_ports) | list }}"
+  become: true
+  when:
+    - firewall_profile_restrict_ports | length > 0
+    - firewall_internal_cidrs | length > 0
+
+# Optional SSH rate limiting
+- name: Enable rate limiting for SSH (optional)
+  community.general.ufw:
+    rule: limit
+    port: 22
+    proto: tcp
+    comment: "SSH rate limiting"
+  when: firewall_enable_rate_limiting | bool
+  become: true
+
+# Optional scoring IP bypass (all ports)
+- name: Allow traffic from scoring engine IPs (optional - all ports)
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ item }}"
+    comment: "Scoring engine access (all ports)"
+  loop: "{{ firewall_scoring_ips }}"
+  when:
+    - firewall_allow_all_from_scoring_ips | bool
+    - firewall_scoring_ips | length > 0
+  become: true
+
+# Logging configuration
+- name: Configure UFW logging
+  community.general.ufw:
+    logging: "{{ firewall_log_level if firewall_enable_logging else 'off' }}"
+  become: true
+
+# Enable UFW (idempotent)
+- name: Enable UFW if inactive
+  community.general.ufw:
+    state: enabled
+  when: not ufw_active
+  become: true
+
+- name: Reload UFW if already active and ICMP rules changed
+  ansible.builtin.command: ufw reload
+  when:
+    - ufw_active
+    - ufw_icmp_rules.changed or (ufw6_icmp_rules is defined and ufw6_icmp_rules.changed)
+  changed_when: true
+  failed_when: false
+  become: true
+
+- name: Verify UFW is active
+  ansible.builtin.command: ufw status verbose
+  register: ufw_status
+  changed_when: false
+  become: true
+
+- name: Display UFW status
+  ansible.builtin.debug:
+    msg: "{{ ufw_status.stdout_lines }}"

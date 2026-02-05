@@ -1,0 +1,59 @@
+---
+# root hardening. Sets root to nologin.
+
+- name: Get current root shell
+  ansible.builtin.shell: "getent passwd root | cut -d: -f7"
+  register: root_shell_before
+  changed_when: false
+  check_mode: false
+  become: true
+
+- name: Display current root shell
+  ansible.builtin.debug:
+    msg: "Current root shell: {{ root_shell_before.stdout }}"
+
+- name: Change root shell to /bin/nologin
+  ansible.builtin.user:
+    name: root
+    shell: /bin/nologin
+  when:
+    - ssh_hardening_set_root_nologin | bool
+    - root_shell_before.stdout != "/bin/nologin"
+  register: root_shell_change
+  become: true
+
+- name: Display root shell change result
+  ansible.builtin.debug:
+    msg: "{{ '✅ Root shell changed to /bin/nologin' if root_shell_change is changed else '✅ Root shell already /bin/nologin' }}"
+
+- name: Verify root shell change
+  ansible.builtin.shell: "getent passwd root | cut -d: -f7"
+  register: root_shell_after
+  changed_when: false
+  check_mode: false
+  failed_when: root_shell_after.stdout != "/bin/nologin"
+  when: ssh_hardening_set_root_nologin | bool
+  become: true
+
+- name: Lock root account (disable password login)
+  ansible.builtin.user:
+    name: root
+    password_lock: true
+  when: ssh_hardening_lock_root_account | bool
+  register: root_lock
+  become: true
+
+- name: Display root account lock result
+  ansible.builtin.debug:
+    msg: "{{ '✅ Root account locked (password login disabled)' if root_lock is changed else '✅ Root account already locked' }}"
+  when: ssh_hardening_lock_root_account | bool
+
+- name: Display root hardening summary
+  ansible.builtin.debug:
+    msg:
+      - "Root account hardening complete:"
+      - "  • Shell: {{ root_shell_before.stdout }} → /bin/nologin"
+      - "  • Direct login: DISABLED (via sshd_config)"
+      - "{{ '  • Password lock: ENABLED' if ssh_hardening_lock_root_account else '  • Password lock: SKIPPED' }}"
+      - ""
+      - "ℹ️  Root access via: sudo -i (from {{ ansible_user }})"

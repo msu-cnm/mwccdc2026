@@ -1,0 +1,26 @@
+---
+# Ansible collection requirements for the CCDC runbook
+#
+# These collections are intentionally minimal and stable.
+# Only collections actually used by roles/playbooks are listed.
+#
+# Install with:
+#   ansible-galaxy collection install -r requirements.yml --force
+#
+
+collections:
+  - name: ansible.posix
+    version: ">=1.5.4"
+    # Used for:
+    # - sysctl
+    # - mount
+    # - cron
+    # - authorized_key
+    # - SELinux-safe POSIX operations
+
+  - name: community.general
+    version: ">=8.0.0"
+    # Used for:
+    # - getent
+    # - ini_file
+    # - miscellaneous cross-distro helpers

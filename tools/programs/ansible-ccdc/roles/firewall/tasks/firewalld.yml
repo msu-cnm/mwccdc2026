@@ -1,0 +1,288 @@
+---
+# ============================================
+# FIREWALLD CONFIGURATION (RHEL/Fedora)
+# ============================================
+# Competition-safe behavior:
+# - Does NOT change default zone
+# - Does NOT remove existing services/ports
+# - Only configures firewalld if it's already running OR you opt-in to start it
+# - Profile-driven allowlist + internal-only restricted ports
+# ============================================
+
+- name: Install firewalld (best effort, rpm distros)
+  ansible.builtin.raw: dnf install -y firewalld
+  become: true
+  changed_when: false
+  failed_when: false
+  when: (ansible_os_family | default('')) == "RedHat"
+
+- name: Check firewalld state
+  ansible.builtin.command: firewall-cmd --state
+  register: firewalld_state
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Set firewalld_running fact
+  ansible.builtin.set_fact:
+    firewalld_running: "{{ (firewalld_state.stdout | default('')) == 'running' }}"
+  changed_when: false
+
+- name: Ensure firewalld is enabled and started (optional)
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+  become: true
+  when: firewall_manage_firewalld_service | bool
+
+- name: Re-check firewalld state (post-start)
+  ansible.builtin.command: firewall-cmd --state
+  register: firewalld_state_after
+  changed_when: false
+  failed_when: false
+  become: true
+  when: firewall_manage_firewalld_service | bool
+
+- name: Update firewalld_running fact (post-start)
+  ansible.builtin.set_fact:
+    firewalld_running: "{{ (firewalld_state_after.stdout | default('')) == 'running' }}"
+  changed_when: false
+  when: firewall_manage_firewalld_service | bool
+
+- name: Skip firewalld configuration (service not running)
+  ansible.builtin.debug:
+    msg: "ℹ️ firewalld not running and firewall_manage_firewalld_service=false; skipping firewalld configuration"
+  when:
+    - not firewalld_running
+    - not firewall_manage_firewalld_service | bool
+
+# ============================================
+# Determine effective zone (do NOT change zones)
+# ============================================
+
+- name: Get default zone
+  ansible.builtin.command: firewall-cmd --get-default-zone
+  register: default_zone
+  changed_when: false
+  failed_when: false
+  become: true
+  when: firewalld_running
+
+- name: Set effective zone fact
+  ansible.builtin.set_fact:
+    firewalld_effective_zone: "{{ (default_zone.stdout | default('') | trim) | default(firewalld_default_zone, true) }}"
+  changed_when: false
+  when: firewalld_running
+
+- name: Display effective zone
+  ansible.builtin.debug:
+    msg: "✅ Effective zone: {{ firewalld_effective_zone }}"
+  when: firewalld_running
+
+- name: Allow ICMP echo-request (ping) inbound (firewalld rich rule)
+  ansible.posix.firewalld:
+    zone: "{{ firewalld_effective_zone }}"
+    rich_rule: 'rule family="ipv4" icmp-type name="echo-request" accept'
+    state: enabled
+    permanent: true
+    immediate: true
+  become: true
+  when: firewalld_running
+
+- name: Allow ICMP echo-reply inbound (firewalld rich rule)
+  ansible.posix.firewalld:
+    zone: "{{ firewalld_effective_zone }}"
+    rich_rule: 'rule family="ipv4" icmp-type name="echo-reply" accept'
+    state: enabled
+    permanent: true
+    immediate: true
+  become: true
+  when: firewalld_running
+
+- name: Allow ICMPv6 echo-request inbound (firewalld rich rule, best effort)
+  ansible.posix.firewalld:
+    zone: "{{ firewalld_effective_zone }}"
+    rich_rule: 'rule family="ipv6" icmp-type name="echo-request" accept'
+    state: enabled
+    permanent: true
+    immediate: true
+  become: true
+  when: firewalld_running
+  failed_when: false
+
+- name: Allow ICMPv6 echo-reply inbound (firewalld rich rule, best effort)
+  ansible.posix.firewalld:
+    zone: "{{ firewalld_effective_zone }}"
+    rich_rule: 'rule family="ipv6" icmp-type name="echo-reply" accept'
+    state: enabled
+    permanent: true
+    immediate: true
+  become: true
+  when: firewalld_running
+  failed_when: false
+
+# ============================================
+# Compute profile rules
+# ============================================
+
+- name: Assert firewall_profiles is valid
+  ansible.builtin.assert:
+    that:
+      - firewall_profiles is mapping
+      - "'baseline' in firewall_profiles"
+    fail_msg: "firewall_profiles is missing or invalid (expected a dict with at least 'baseline')."
+  when: firewalld_running
+
+- name: Resolve firewall profile (strict)
+  ansible.builtin.set_fact:
+    firewall_profile_effective: "{{ firewall_profile | default('baseline') | trim }}"
+  changed_when: false
+  when: firewalld_running
+
+- name: Fail if firewall_profile is not defined in firewall_profiles
+  ansible.builtin.fail:
+    msg: |
+      firewall_profile='{{ firewall_profile_effective }}' is not present in firewall_profiles keys:
+      {{ firewall_profiles.keys() | list }}
+  when:
+    - firewalld_running
+    - firewall_profile_effective not in firewall_profiles
+
+- name: Compute allowed service names and restricted ports for profile
+  ansible.builtin.set_fact:
+    firewall_allowed_service_names: "{{ firewall_profiles[firewall_profile_effective].allow_services | default([]) }}"
+    firewall_profile_restrict_ports: "{{ firewall_profiles[firewall_profile_effective].restrict_ports | default([]) }}"
+  changed_when: false
+  when: firewalld_running
+
+- name: Build allowed ports list from catalog + additional services
+  ansible.builtin.set_fact:
+    firewall_allowed_ports: >-
+      {{
+        (
+          (firewall_service_catalog | selectattr('name','in', firewall_allowed_service_names) | list)
+          + (firewall_additional_services | default([]))
+        )
+      }}
+  changed_when: false
+  when: firewalld_running
+
+- name: Display firewall profile summary
+  ansible.builtin.debug:
+    msg:
+      - "🔥 Firewall profile: {{ firewall_profile_effective }}"
+      - "✅ Allowed services: {{ firewall_allowed_service_names | join(', ') if firewall_allowed_service_names | length > 0 else '(none)' }}"
+      - "🔒 Restricted ports: {{ firewall_profile_restrict_ports | map(attribute='port') | list | join(', ') if firewall_profile_restrict_ports | length > 0 else '(none)' }}"
+      - "🏠 Internal CIDRs: {{ firewall_internal_cidrs | join(', ') if firewall_internal_cidrs | length > 0 else '(none)' }}"
+  when: firewalld_running
+
+# ============================================
+# Allow profile ports (PUBLIC within zone)
+# ============================================
+
+- name: Allow profile ports (by port)
+  ansible.posix.firewalld:
+    zone: "{{ firewalld_effective_zone }}"
+    port: "{{ item.port }}/{{ item.proto }}"
+    state: enabled
+    permanent: true
+    immediate: true
+  loop: "{{ firewall_allowed_ports }}"
+  become: true
+  when:
+    - firewalld_running
+    - firewall_allowed_ports | length > 0
+
+# ============================================
+# Restrict sensitive ports to internal CIDRs only (rich rules)
+# ============================================
+
+- name: Allow restricted ports from internal CIDRs only (rich rules)
+  ansible.posix.firewalld:
+    zone: "{{ firewalld_effective_zone }}"
+    rich_rule: >-
+      rule family="ipv4"
+      source address="{{ item.0 }}"
+      port port="{{ item.1.port }}" protocol="{{ item.1.proto }}"
+      accept
+    state: enabled
+    permanent: true
+    immediate: true
+  loop: "{{ firewall_internal_cidrs | product(firewall_profile_restrict_ports) | list }}"
+  become: true
+  when:
+    - firewalld_running
+    - firewall_profile_restrict_ports | length > 0
+    - firewall_internal_cidrs | length > 0
+
+# ============================================
+# Optional scoring IP bypass (all ports)
+# ============================================
+
+- name: Allow all traffic from scoring engine IPs (optional)
+  ansible.posix.firewalld:
+    zone: "{{ firewalld_effective_zone }}"
+    source: "{{ item }}"
+    state: enabled
+    permanent: true
+    immediate: true
+  loop: "{{ firewall_scoring_ips }}"
+  become: true
+  when:
+    - firewalld_running
+    - firewall_allow_all_from_scoring_ips | bool
+    - firewall_scoring_ips | length > 0
+
+# ============================================
+# Optional rate limiting for SSH
+# ============================================
+
+- name: Enable SSH rate limiting with rich rule (optional)
+  ansible.posix.firewalld:
+    zone: "{{ firewalld_effective_zone }}"
+    rich_rule: 'rule service name="ssh" limit value="{{ firewall_ssh_rate_limit }}" accept'
+    state: enabled
+    permanent: true
+    immediate: true
+  become: true
+  when:
+    - firewalld_running
+    - firewall_enable_rate_limiting | bool
+
+# ============================================
+# Optional logging
+# ============================================
+
+- name: Configure firewalld logging (runtime)
+  ansible.builtin.command: "firewall-cmd --set-log-denied={{ 'all' if firewall_log_denied else 'off' }}"
+  when:
+    - firewalld_running
+    - firewall_enable_logging | bool
+  changed_when: true
+  failed_when: false
+  become: true
+
+# ============================================
+# Verify configuration
+# ============================================
+
+- name: Get firewalld configuration (effective zone)
+  ansible.builtin.command: "firewall-cmd --zone={{ firewalld_effective_zone }} --list-all"
+  register: firewalld_config
+  changed_when: false
+  failed_when: false
+  become: true
+  when: firewalld_running
+
+- name: Display firewalld configuration summary
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "Firewalld configuration complete:"
+      - "  • Running: {{ firewalld_running }}"
+      - "  • Effective zone: {{ firewalld_effective_zone | default(firewalld_default_zone) }}"
+      - "  • Profile: {{ firewall_profile_effective | default('baseline') }}"
+      - "  • Allowed ports applied: {{ firewall_allowed_ports | length if firewall_allowed_ports is defined else 0 }}"
+      - "  • Restricted ports applied: {{ firewall_profile_restrict_ports | length if firewall_profile_restrict_ports is defined else 0 }}"
+  when: firewalld_running

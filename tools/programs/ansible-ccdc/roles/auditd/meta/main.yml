@@ -1,0 +1,47 @@
+---
+# ============================================
+# AUDITD MONITORING ROLE - METADATA
+# ============================================
+
+galaxy_info:
+  author: CCDC Team
+  description: Auditd-based intrusion detection and file integrity monitoring for CCDC competition environments
+  company: MWCCDC
+  license: MIT
+  min_ansible_version: "2.15"
+  
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Fedora
+      versions:
+        - 38
+        - 39
+        - 40
+        - 41
+        - 42
+        - 43
+    - name: EL
+      versions:
+        - 8
+        - 9
+
+  galaxy_tags:
+    - security
+    - auditd
+    - intrusion-detection
+    - file-integrity
+    - monitoring
+    - ccdc
+    - compliance
+
+dependencies: []
+
+allow_duplicates: false

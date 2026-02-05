@@ -1,0 +1,25 @@
+---
+- name: restart splunk safely
+  ansible.builtin.command:
+    cmd: /opt/splunk/bin/splunk restart
+  become: true
+  become_user: splunk
+  register: splunk_restart
+  changed_when: true
+  failed_when: splunk_restart.rc != 0
+
+- name: wait for splunk mgmt port
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: 8089
+    state: started
+    delay: 3
+    timeout: 180
+
+- name: wait for splunk receiver port
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: 9997
+    state: started
+    delay: 3
+    timeout: 180

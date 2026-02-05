@@ -1,0 +1,29 @@
+---
+# ============================================
+# AUDITD ROLE - HANDLERS
+# ============================================
+
+- name: restart auditd
+  ansible.builtin.command: "killall -SIGHUP auditd"
+  listen: restart auditd
+  changed_when: true
+  become: true
+
+- name: reload auditd rules
+  ansible.builtin.command: augenrules --load
+  listen: reload auditd rules
+  register: audit_reload
+  changed_when: true
+  failed_when: false
+  become: true
+
+- name: warn if auditd rules failed to load
+  ansible.builtin.debug:
+    msg: "⚠️ auditd rules failed to load on {{ inventory_hostname }}: {{ audit_reload.stderr | default('') }}"
+  when: audit_reload is defined and audit_reload.rc != 0
+
+- name: flush auditd cache
+  ansible.builtin.command: "auditctl -D"
+  listen: flush auditd cache
+  changed_when: true
+  become: true

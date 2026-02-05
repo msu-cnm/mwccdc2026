@@ -1,0 +1,57 @@
+# =========================
+# Ansible / Python
+# =========================
+.ansible/
+*.retry
+*.pyc
+__pycache__/
+.venv/
+venv/
+*.egg-info/
+/tmp/ansible_facts
+
+# =========================
+# Vault / Secrets
+# =========================
+.vault_pass
+vault_pass.txt
+*.vault_pass
+
+# =========================
+# Backups / temp
+# =========================
+*.bak
+*.backup
+*.backup.*
+*~
+*.log
+fix_*.sh
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Deprecated
+# =========================
+group_vars/linux/
+
+# =========================
+# SSH keys (NEVER commit)
+# =========================
+*.pem
+*.key
+*_rsa
+*_rsa.pub
+ccdc_rsa
+ccdc_rsa.pub

@@ -1,0 +1,48 @@
+---
+# ============================================
+# AUDITD INSTALLATION
+# ============================================
+
+- name: Install auditd (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: "{{ auditd_packages['Debian'] }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+  register: auditd_apt
+  become: true
+
+- name: Install auditd packages (Fedora/RHEL) via dnf CLI
+  ansible.builtin.raw: dnf install -y audit audit-libs
+  register: auditd_dnf_raw
+  become: true
+  changed_when: false
+  when: ansible_os_family == "RedHat"
+
+
+- name: Display installation result
+  ansible.builtin.debug:
+    msg: "✅ Auditd packages ensured on {{ inventory_hostname }}"
+
+- name: Ensure audit rules directory exists
+  ansible.builtin.file:
+    path: /etc/audit/rules.d
+    state: directory
+    mode: '0750'
+    owner: root
+    group: root
+  become: true
+
+- name: Display installation summary
+  ansible.builtin.debug:
+    msg:
+      - "Auditd installation complete:"
+      - "  • Packages: {{ auditd_packages['Debian'] | join(', ') if ansible_os_family == 'Debian' else auditd_packages['RedHat'] | join(', ') }}"
+      - "  • Rules directory: /etc/audit/rules.d"
+      - >-
+        Status: {{
+          'Newly installed/ensured'
+          if (auditd_apt.changed | default(false)) or (auditd_dnf_raw is defined)
+          else 'Already present'
+        }}

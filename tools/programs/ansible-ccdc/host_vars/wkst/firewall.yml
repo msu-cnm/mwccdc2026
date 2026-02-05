@@ -1,0 +1,3 @@
+---
+# Host firewall profile selection
+firewall_profile: baseline

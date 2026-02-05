@@ -1,0 +1,30 @@
+---
+# fim/aide default variables
+
+fim_aide_enabled: true
+
+fim_aide_rule: "CCDCFIM"
+fim_aide_rule_attrs: "p+i+n+u+g+s+m+c+sha256"
+
+fim_aide_conf_path: "/etc/aide/aide.conf"
+fim_aide_db_dir: "/var/lib/aide"
+fim_aide_db_plain: "/var/lib/aide/aide.db"
+fim_aide_db_gz: "/var/lib/aide/aide.db.gz"
+fim_aide_db_new_plain: "/var/lib/aide/aide.db.new"
+fim_aide_db_new_gz: "/var/lib/aide/aide.db.new.gz"
+
+fim_aide_paths:
+  - "^/etc"
+
+fim_aide_excludes: []
+
+fim_aide_initialize_db: true
+
+fim_aide_cron_minute: "*/15"
+fim_aide_cron_hour: "*"
+
+fim_aide_script_dir: /usr/local/bin/ccdc-fim
+fim_aide_script_path: /usr/local/bin/ccdc-fim/aide-check.sh
+
+fim_discord_sender_path: /usr/local/bin/ccdc-audit-alerts/send-discord-alert.py
+fim_discord_tail_lines: 80

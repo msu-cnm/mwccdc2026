@@ -1,0 +1,487 @@
+{
+	"visualizations": {
+		"viz_oixdrJX3": {
+			"type": "splunk.singlevalue",
+			"dataSources": {
+				"primary": "ds_QdZbjNgH"
+			},
+			"title": "Auth Failures",
+			"description": "Last 15 Minutes",
+			"options": {
+				"majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+				"trendColor": "> trendValue | rangeValue(trendColorEditorConfig)"
+			},
+			"context": {
+				"majorColorEditorConfig": [
+					{
+						"value": "#118832",
+						"to": 2
+					},
+					{
+						"value": "#669922",
+						"from": 2,
+						"to": 4
+					},
+					{
+						"value": "#9D9F0D",
+						"from": 4,
+						"to": 6
+					},
+					{
+						"value": "#D97A0D",
+						"from": 6,
+						"to": 8
+					},
+					{
+						"value": "#D94E17",
+						"from": 8,
+						"to": 10
+					},
+					{
+						"value": "#D41F1F",
+						"from": 10
+					}
+				],
+				"trendColorEditorConfig": [
+					{
+						"value": "#1C6B2D",
+						"to": 0
+					},
+					{
+						"value": "#9E2520",
+						"from": 0
+					}
+				]
+			}
+		},
+		"viz_ycBWjiUU": {
+			"type": "splunk.singlevalue",
+			"dataSources": {
+				"primary": "ds_dap1Yzhw"
+			},
+			"title": "Successful Logins",
+			"description": "Last 15 Minutes",
+			"options": {
+				"majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+				"trendColor": "> trendValue | rangeValue(trendColorEditorConfig)"
+			},
+			"context": {
+				"majorColorEditorConfig": [
+					{
+						"value": "#118832",
+						"to": 2
+					},
+					{
+						"value": "#669922",
+						"from": 2,
+						"to": 4
+					},
+					{
+						"value": "#9D9F0D",
+						"from": 4,
+						"to": 6
+					},
+					{
+						"value": "#D97A0D",
+						"from": 6,
+						"to": 8
+					},
+					{
+						"value": "#D94E17",
+						"from": 8,
+						"to": 10
+					},
+					{
+						"value": "#D41F1F",
+						"from": 10
+					}
+				],
+				"trendColorEditorConfig": [
+					{
+						"value": "#1C6B2D",
+						"to": 0
+					},
+					{
+						"value": "#9E2520",
+						"from": 0
+					}
+				]
+			}
+		},
+		"viz_drZJWU2y": {
+			"type": "splunk.singlevalue",
+			"dataSources": {
+				"primary": "ds_EOwwWeHL"
+			},
+			"title": "Sudo Usage",
+			"description": "Last 15 Minutes",
+			"options": {
+				"majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+				"trendColor": "> trendValue | rangeValue(trendColorEditorConfig)"
+			},
+			"context": {
+				"majorColorEditorConfig": [
+					{
+						"value": "#118832",
+						"to": 2
+					},
+					{
+						"value": "#669922",
+						"from": 2,
+						"to": 4
+					},
+					{
+						"value": "#9D9F0D",
+						"from": 4,
+						"to": 6
+					},
+					{
+						"value": "#D97A0D",
+						"from": 6,
+						"to": 8
+					},
+					{
+						"value": "#D94E17",
+						"from": 8,
+						"to": 10
+					},
+					{
+						"value": "#D41F1F",
+						"from": 10
+					}
+				],
+				"trendColorEditorConfig": [
+					{
+						"value": "#1C6B2D",
+						"to": 0
+					},
+					{
+						"value": "#9E2520",
+						"from": 0
+					}
+				]
+			}
+		},
+		"viz_9OVXsFbe": {
+			"type": "splunk.singlevalue",
+			"dataSources": {
+				"primary": "ds_op7Ak64a"
+			},
+			"title": "Service Errors",
+			"description": "Last 60 Minutes",
+			"options": {
+				"majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+				"trendColor": "> trendValue | rangeValue(trendColorEditorConfig)"
+			},
+			"context": {
+				"majorColorEditorConfig": [
+					{
+						"value": "#118832",
+						"to": 2
+					},
+					{
+						"value": "#669922",
+						"from": 2,
+						"to": 4
+					},
+					{
+						"value": "#9D9F0D",
+						"from": 4,
+						"to": 6
+					},
+					{
+						"value": "#D97A0D",
+						"from": 6,
+						"to": 8
+					},
+					{
+						"value": "#D94E17",
+						"from": 8,
+						"to": 10
+					},
+					{
+						"value": "#D41F1F",
+						"from": 10
+					}
+				],
+				"trendColorEditorConfig": [
+					{
+						"value": "#1C6B2D",
+						"to": 0
+					},
+					{
+						"value": "#9E2520",
+						"from": 0
+					}
+				]
+			}
+		},
+		"viz_EIyEuB24": {
+			"type": "splunk.table",
+			"dataSources": {
+				"primary": "ds_GGI2Arfv"
+			},
+			"title": "Top Failed Login Sources",
+			"description": "Last 60 Minutes"
+		},
+		"viz_tmHS37vu": {
+			"type": "splunk.table",
+			"dataSources": {
+				"primary": "ds_hZl2cyqT"
+			},
+			"title": "Top Usernames Targeted",
+			"description": "Last 60 Minutes"
+		},
+		"viz_2yy5aaGb": {
+			"type": "splunk.table",
+			"dataSources": {
+				"primary": "ds_wrtQeviM"
+			},
+			"title": "Account Changes",
+			"description": "Last 60 Minutes"
+		},
+		"viz_fn6cNyLt": {
+			"type": "splunk.events",
+			"dataSources": {
+				"primary": "ds_493iH32h"
+			},
+			"title": "Recent Security Events",
+			"description": "Last 4 Hours"
+		},
+		"viz_lMVA9q7t": {
+			"type": "splunk.events",
+			"dataSources": {
+				"primary": "ds_a1kGhOdl"
+			},
+			"title": "Web/App Errors",
+			"description": "Last 60 Minutes"
+		}
+	},
+	"dataSources": {
+		"ds_QdZbjNgH": {
+			"type": "ds.search",
+			"options": {
+				"query": "index=\"main\"\n(\n  \"Failed password\"\n  OR \"authentication failure\"\n  OR \"invalid user\"\n)\n| stats count\n",
+				"queryParameters": {
+					"earliest": "-15m",
+					"latest": "now"
+				}
+			},
+			"name": "auth_failures"
+		},
+		"ds_dap1Yzhw": {
+			"type": "ds.search",
+			"options": {
+				"query": "index=\"main\"\n(\n  \"Accepted password\"\n  OR \"session opened for user\"\n)\n| stats count\n",
+				"queryParameters": {
+					"earliest": "-15m",
+					"latest": "now"
+				}
+			},
+			"name": "successful_logins"
+		},
+		"ds_EOwwWeHL": {
+			"type": "ds.search",
+			"options": {
+				"query": "index=\"main\"\n(\n  source=\"/var/log/secure\"\n  OR source=\"/var/log/auth.log\"\n)\n\"sudo:\"\n| stats count\n",
+				"queryParameters": {
+					"earliest": "-15m",
+					"latest": "now"
+				}
+			},
+			"name": "sudo_usage"
+		},
+		"ds_op7Ak64a": {
+			"type": "ds.search",
+			"options": {
+				"query": "index=\"main\"\n(\n  \"error\"\n  OR \"failed\"\n  OR \"critical\"\n)\n| stats count\n",
+				"queryParameters": {
+					"earliest": "-60m@m",
+					"latest": "now"
+				}
+			},
+			"name": "service_errors"
+		},
+		"ds_GGI2Arfv": {
+			"type": "ds.search",
+			"options": {
+				"query": "index=\"main\"\n(\n  \"Failed password\"\n  OR \"authentication failure\"\n)\n| rex field=_raw \"(?<src_ip>\\d+\\.\\d+\\.\\d+\\.\\d+)\"\n| stats count by src_ip\n| sort - count\n| head 10\n",
+				"queryParameters": {
+					"earliest": "-60m@m",
+					"latest": "now"
+				}
+			},
+			"name": "top_failed_login_sources"
+		},
+		"ds_hZl2cyqT": {
+			"type": "ds.search",
+			"options": {
+				"query": "index=\"main\"\n(\n  \"Failed password\"\n  OR \"invalid user\"\n)\n| rex field=_raw \"for (invalid user |user )(?<user>\\S+)\"\n| stats count by user\n| sort - count\n| head 10\n",
+				"queryParameters": {
+					"earliest": "-60m@m",
+					"latest": "now"
+				}
+			},
+			"name": "top_usernames"
+		},
+		"ds_wrtQeviM": {
+			"type": "ds.search",
+			"options": {
+				"query": "index=\"main\"\n(\n  \"useradd\"\n  OR \"usermod\"\n  OR \"passwd\"\n)\n| stats count by _raw\n| head 10\n",
+				"queryParameters": {
+					"earliest": "-60m@m",
+					"latest": "now"
+				}
+			},
+			"name": "account_changes"
+		},
+		"ds_493iH32h": {
+			"type": "ds.search",
+			"options": {
+				"query": "index=\"main\"\n(\n  \"Failed password\"\n  OR \"Accepted password\"\n  OR \"sudo:\"\n  OR \"useradd\"\n  OR \"passwd\"\n)\n| sort - _time\n",
+				"queryParameters": {
+					"earliest": "-4h@m",
+					"latest": "now"
+				}
+			},
+			"name": "security_events"
+		},
+		"ds_a1kGhOdl": {
+			"type": "ds.search",
+			"options": {
+				"query": "index=\"main\"\n(\n  source=\"/var/log/httpd/*\"\n  OR source=\"/var/log/nginx/*\"\n  OR source=\"/var/log/syslog\"\n)\n(\n  \"error\"\n  OR \"fail\"\n  OR \"denied\"\n)\n| sort - _time\n",
+				"queryParameters": {
+					"earliest": "-60m@m",
+					"latest": "now"
+				}
+			},
+			"name": "web_app_errors"
+		}
+	},
+	"defaults": {
+		"dataSources": {
+			"ds.search": {
+				"options": {
+					"queryParameters": {
+						"latest": "$global_time.latest$",
+						"earliest": "$global_time.earliest$"
+					}
+				}
+			}
+		}
+	},
+	"inputs": {
+		"input_global_trp": {
+			"type": "input.timerange",
+			"options": {
+				"token": "global_time",
+				"defaultValue": "-24h@h,now"
+			},
+			"title": "Global Time Range"
+		}
+	},
+	"layout": {
+		"type": "absolute",
+		"options": {
+			"width": 1440,
+			"height": 1000
+		},
+		"structure": [
+			{
+				"item": "viz_oixdrJX3",
+				"type": "block",
+				"position": {
+					"x": 0,
+					"y": 0,
+					"w": 250,
+					"h": 250
+				}
+			},
+			{
+				"item": "viz_ycBWjiUU",
+				"type": "block",
+				"position": {
+					"x": 250,
+					"y": 0,
+					"w": 250,
+					"h": 250
+				}
+			},
+			{
+				"item": "viz_drZJWU2y",
+				"type": "block",
+				"position": {
+					"x": 0,
+					"y": 250,
+					"w": 250,
+					"h": 250
+				}
+			},
+			{
+				"item": "viz_9OVXsFbe",
+				"type": "block",
+				"position": {
+					"x": 250,
+					"y": 250,
+					"w": 250,
+					"h": 250
+				}
+			},
+			{
+				"item": "viz_EIyEuB24",
+				"type": "block",
+				"position": {
+					"x": 500,
+					"y": 250,
+					"w": 470,
+					"h": 250
+				}
+			},
+			{
+				"item": "viz_tmHS37vu",
+				"type": "block",
+				"position": {
+					"x": 500,
+					"y": 0,
+					"w": 470,
+					"h": 250
+				}
+			},
+			{
+				"item": "viz_2yy5aaGb",
+				"type": "block",
+				"position": {
+					"x": 970,
+					"y": 0,
+					"w": 470,
+					"h": 500
+				}
+			},
+			{
+				"item": "viz_fn6cNyLt",
+				"type": "block",
+				"position": {
+					"x": 0,
+					"y": 500,
+					"w": 720,
+					"h": 500
+				}
+			},
+			{
+				"item": "viz_lMVA9q7t",
+				"type": "block",
+				"position": {
+					"x": 720,
+					"y": 500,
+					"w": 720,
+					"h": 500
+				}
+			}
+		],
+		"globalInputs": [
+			"input_global_trp"
+		]
+	},
+	"description": "",
+	"title": "CCDC Dashboard"
+}

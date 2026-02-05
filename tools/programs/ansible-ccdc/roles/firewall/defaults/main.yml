@@ -1,0 +1,90 @@
+---
+# Firewall role defaults (competition-safe).
+# - Profile-driven allowlist
+# - Do not surprise-enable firewalld
+# - Restrict sensitive ports to internal CIDRs
+# Override via group_vars/ or host_vars/ as needed.
+
+firewall_backend: "{{ 'ufw' if (ansible_os_family | default('')) == 'Debian' else 'firewalld' }}"
+firewall_enabled: true
+
+# Firewalld: configure only if running unless explicitly opted-in
+firewall_manage_firewalld_service: false
+firewalld_default_zone: public  # fallback if default zone cannot be determined
+
+# Catalog of potential services. Profiles select from this list.
+firewall_service_catalog:
+  - { name: ssh, port: 22, proto: tcp, comment: "SSH - management" }
+  - { name: http, port: 80, proto: tcp, comment: "HTTP" }
+  - { name: https, port: 443, proto: tcp, comment: "HTTPS" }
+  - { name: smtp, port: 25, proto: tcp, comment: "SMTP" }
+  - { name: pop3, port: 110, proto: tcp, comment: "POP3" }
+  - { name: dns_udp, port: 53, proto: udp, comment: "DNS (UDP)" }
+  - { name: dns_tcp, port: 53, proto: tcp, comment: "DNS (TCP)" }
+  - { name: submission, port: 587, proto: tcp, comment: "SMTP submission" }
+  - { name: smtps, port: 465, proto: tcp, comment: "SMTPS" }
+  - { name: imap, port: 143, proto: tcp, comment: "IMAP" }
+  - { name: imaps, port: 993, proto: tcp, comment: "IMAPS" }
+  - { name: pop3s, port: 995, proto: tcp, comment: "POP3S" }
+  - { name: ldap, port: 389, proto: tcp, comment: "LDAP (only if needed)" }
+  - { name: ldaps, port: 636, proto: tcp, comment: "LDAPS (only if needed)" }
+  - { name: splunk_web, port: 8000, proto: tcp, comment: "Splunk Web UI (internal only)" }
+  - { name: splunk_mgmt, port: 8089, proto: tcp, comment: "Splunk mgmt (internal only)" }
+  - { name: splunk_recv, port: 9997, proto: tcp, comment: "Splunk receiver (internal only)" }
+
+firewall_additional_services: []  # appended to allow list
+
+# Trusted internal sources for restricted ports. Competition overrides in group_vars/all/firewall.yml.
+firewall_internal_cidrs:
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "192.168.0.0/16"
+
+firewall_profile: baseline
+
+firewall_profiles:
+  baseline:
+    allow_services: [ssh]
+    restrict_ports: []
+
+  ecom:
+    allow_services: [ssh, http, https]
+    restrict_ports: []
+
+  webmail:
+    allow_services: [ssh, http, https, smtp, submission, pop3]
+    restrict_ports: []
+
+  splunk:
+    allow_services: [ssh, http, https]
+    restrict_ports:
+      - { port: 8000, proto: tcp }
+      - { port: 8089, proto: tcp }
+      - { port: 9997, proto: tcp }
+
+# Optional “scoring engine can reach everything” bypass (usually OFF)
+firewall_allow_all_from_scoring_ips: false
+firewall_scoring_ips: []
+
+# Rate limiting / logging (optional)
+firewall_enable_rate_limiting: false
+firewall_ssh_rate_limit: "10/minute"
+
+firewall_enable_logging: false
+firewall_log_level: "{{ 'low' if (ansible_os_family | default('')) == 'Debian' else 'notice' }}"
+firewall_log_denied: true
+
+# Default policies
+firewall_default_incoming: deny
+firewall_default_outgoing: allow
+firewall_default_forward: deny
+
+# Kernel network hardening (optional)
+firewall_enable_kernel_hardening: false
+firewall_enable_syn_protection: false
+
+firewall_enable_rp_filter: true
+firewall_rp_filter_value: "2"
+
+firewall_disable_ip_forwarding: false
+firewall_disable_ipv6_forwarding: false

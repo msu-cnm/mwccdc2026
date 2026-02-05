@@ -1,0 +1,26 @@
+---
+# UF download URLs (runtime download only; do not commit packages into repo)
+splunk_universal_forwarder_deb_url: "https://download.splunk.com/products/universalforwarder/releases/9.1.1/linux/splunkforwarder-9.1.1-64e843ea36b1-linux-2.6-amd64.deb"
+splunk_universal_forwarder_rpm_url: "https://download.splunk.com/products/universalforwarder/releases/9.1.1/linux/splunkforwarder-9.1.1-64e843ea36b1.x86_64.rpm"
+
+# Receiver config (set in group_vars day-of if possible)
+splunk_universal_forwarder_host: ""                  # preferred: explicit IP/hostname
+splunk_universal_forwarder_port: 9997
+splunk_universal_forwarder_from_inventory: true      # fallback: use inventory host named 'splunk'
+
+# Download behavior
+splunk_universal_forwarder_validate_certs: true
+splunk_universal_forwarder_local_pkg: ""             # optional: pre-staged package path on target
+
+# UF paths
+splunk_universal_forwarder_home: "/opt/splunkforwarder"
+splunk_universal_forwarder_bin: "/opt/splunkforwarder/bin/splunk"
+
+# Inputs (only deployed if the file exists on the host)
+splunk_universal_forwarder_index: "main"
+splunk_universal_forwarder_enable_audit: true
+splunk_universal_forwarder_enable_auth: true
+
+# Validation behavior
+splunk_universal_forwarder_validate_network: true    # check TCP/9997 reachability
+splunk_universal_forwarder_verbose: false

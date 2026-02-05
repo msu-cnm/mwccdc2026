@@ -1,0 +1,102 @@
+---
+# ============================================
+# KERNEL HARDENING FOR NETWORK SECURITY
+# ============================================
+
+- name: Enable SYN cookies (SYN flood protection)
+  ansible.posix.sysctl:
+    name: net.ipv4.tcp_syncookies
+    value: '1'
+    state: present
+    sysctl_set: true
+    reload: true
+  become: true
+  when: firewall_enable_syn_protection | default(false) | bool
+
+- name: Disable IP forwarding (not a router)
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: '0'
+    state: present
+    sysctl_set: true
+    reload: true
+  become: true
+  when: firewall_disable_ip_forwarding | default(false) | bool
+
+- name: Disable IPv6 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv6.conf.all.forwarding
+    value: '0'
+    state: present
+    sysctl_set: true
+    reload: true
+  become: true
+  when: firewall_disable_ipv6_forwarding | default(false) | bool
+
+# rp_filter values:
+# 0=off, 1=strict, 2=loose (recommended default in routed/NAT environments)
+- name: Enable source address verification (anti-spoofing) (optional)
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.rp_filter
+    value: "{{ firewall_rp_filter_value | default('2') }}"
+    state: present
+    sysctl_set: true
+    reload: true
+  become: true
+  when: firewall_enable_rp_filter | default(true) | bool
+
+- name: Disable ICMP redirect acceptance
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.accept_redirects
+    value: '0'
+    state: present
+    sysctl_set: true
+    reload: true
+  become: true
+
+- name: Disable secure ICMP redirect acceptance
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.secure_redirects
+    value: '0'
+    state: present
+    sysctl_set: true
+    reload: true
+  become: true
+
+- name: Disable ICMP redirect sending
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.send_redirects
+    value: '0'
+    state: present
+    sysctl_set: true
+    reload: true
+  become: true
+
+- name: Enable bad error message protection
+  ansible.posix.sysctl:
+    name: net.ipv4.icmp_ignore_bogus_error_responses
+    value: '1'
+    state: present
+    sysctl_set: true
+    reload: true
+  become: true
+
+- name: Log martian packets (packets with impossible addresses)
+  ansible.posix.sysctl:
+    name: net.ipv4.conf.all.log_martians
+    value: '1'
+    state: present
+    sysctl_set: true
+    reload: true
+  become: true
+
+- name: Display kernel hardening summary
+  ansible.builtin.debug:
+    msg:
+      - "Kernel hardening applied:"
+      - "  • SYN cookies: {{ 'ENABLED' if (firewall_enable_syn_protection | default(false) | bool) else 'OFF' }}"
+      - "  • IP forwarding forced off: {{ 'YES' if (firewall_disable_ip_forwarding | default(false) | bool) else 'NO (unchanged)' }}"
+      - "  • IPv6 forwarding forced off: {{ 'YES' if (firewall_disable_ipv6_forwarding | default(false) | bool) else 'NO (unchanged)' }}"
+      - "  • rp_filter: {{ (firewall_rp_filter_value | default('2')) if (firewall_enable_rp_filter | default(true) | bool) else 'DISABLED' }}"
+      - "  • ICMP redirects: DISABLED"
+      - "  • Martian logging: ENABLED"

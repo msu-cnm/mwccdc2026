@@ -1,0 +1,9 @@
+---
+# Internal networks allowed to talk to internal services (LAN-side trust scopes).
+# Keep this aligned with the current competition topology / inventory.
+
+firewall_internal_cidrs:
+  - "172.20.242.0/24"   # Linux segment
+  - "172.20.240.0/24"   # Windows segment
+  - "172.16.101.0/24"   # Network devices
+  - "172.16.102.0/24"
