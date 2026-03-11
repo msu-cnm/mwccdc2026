@@ -23,7 +23,7 @@ while IFS= read -r file; do
   echo "$(date +"%Y-%m-%d %H:%M:%S") $file | $hash"
 done < "$watchlist"
 
-echo "Montoring..."
+echo "Monitoring..."
 
 while true; do
   while IFS= read -r file; do
@@ -41,5 +41,5 @@ while true; do
     fi
   done < "$watchlist"
 
-  sleep 5
+  sleep 60
 done
