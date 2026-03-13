@@ -4,9 +4,19 @@
 
  **BASELINE & DOCUMENTATION**
 
+ | Palo IPs				   | Outside		   | Inside			   | Management		|
+ | ----------------------- | ----------------- | ----------------- | -------------- |
+ | Palo 1 (Linux Systems)  | 172.16.101.254/24 | 172.20.242.254/24 | 172.20.242.150 |
+ | Palo 2 (Winodws Systems)| 172.16.102.254/24 | 172.20.240.254/24 | 172.20.240.200 |
+
 * Export default configuration (**`Device -> Setup -> Operations -> Export Named Configuration Snapshot running-config.xml`**)
 
 * Check for updates (**`Device -> Software`**)
+
+* Enter scripting mode and then configure mode in CLI
+  	* `set cli scripting-mode on`
+  	*  This will allow you to copy and paste multiple commands in to run
+	* `configure`
 
 * Set firewall login-banner (**`Device -> Setup -> Management -> General Settings`**)
 	* `set deviceconfig system login-banner "This sytem is for authorized use only. Unauthorized access is prohibited!"`
@@ -20,15 +30,17 @@
 * Establish Service Objects (**`Objects -> Services`**)
 	* `set service <serviceName> protocol <tcp/udp> port <port>`
 
-| Server            | IP            |
-| ----------------- | ------------- |
-| Ubuntu_Server     | 172.20.242.30 |
-| Ubuntu_Server_NAT | 172.25.27.11  |
-| Fedora            | 172.20.242.40 |
-| Fedora_NAT        | 172.25.27.39  |
-| Splunk            | 172.20.242.20 |
-| Splunk_NAT        | 172.25.27.9   |
-| Ubuntu            | x.x.x.x       |
+| Linux Servers     | IP            | Windows Servers 	| IP			|
+| ----------------- | ------------- | ----------------- | ------------- |
+| Ubuntu_Server     | 172.20.242.30 | Server19_AD		| 172.20.240.102|
+| Ubuntu_Server_NAT | 172.25.2#.11  | Server19_AD_NAT	| 172.25.2#.155 |
+| Fedora            | 172.20.242.40 | Server19_Web		| 172.20.240.101|
+| Fedora_NAT        | 172.25.2#.39  | Server19_Web_NAT	| 172.25.2#.140 |
+| Splunk            | 172.20.242.20 | Server22_FTP		| 172.20.240.100|
+| Splunk_NAT        | 172.25.2#.9   | Server22_FTP_NAT	| 172.25.2#.162	|
+| Ubuntu            | dchp		    | Windows_11		| 172.20.240.100|
+| Ubuntu_NAT		| dynamic		| Windows_11_NAT	| 172.25.2#.144 |
+
 
 **LOG FORWARDING**
 
@@ -55,7 +67,8 @@
 **ADMIN SECURITY**
 
 1. Check for current admin accounts (**`Device -> Administrators`**)
-	* `show admins all`
+	* `show admins all` (**`In operational mode`**)
+
 
 - Create a new superuser (**`Device -> Administrators -> Add`**)
 	- `set mgt-config users <newadmin> password`
@@ -82,14 +95,15 @@
 
 - Disable SSH and any other unwanted services (**`Device -> Setup -> Interfaces -> Management Interface -> Administrative Management Services`**)
 	- `show system services`
-	- `set deviceconfig system service disable-<service> yes disable-<service> yes`
+	- `set deviceconfig system service disable-<service> yes`
 
 - Delete any management profiles and create new (**`Network -> Network Profiles -> Interface Management`**)
 	- `delete network profiles interface-management-profile <ProfileName>`
 	- `set network profiles interface-management-profile <ProfileName> ping yes`
 
 **INTERFACES** (**`Network -> Interfaces`**)
-
+* Show interfaces
+	* `show interface all`
 - Apply the management profiles to interfaces
 	- `set network interface ethernet <interface> layer3 interface-management-profile <ProfileName>`
 * Check the interface for correct static IP
@@ -106,7 +120,8 @@
 **NAT RULES** (**`Policies -> NAT`**)
 
 * Show NAT Rules
-	* `show rulebase nat`
+	* `show rulebase nat` (**`In configure mode`**)
+	* Or `show running nat-policy` (**`In operational mode`**)
 * Delete any existing NAT Rules
 	* `delete rulebase nat rules <natRuleName>` 
 * Create new NAT Rules
@@ -115,7 +130,8 @@
 **SECURITY RULES** (**`Policies -> Security`**)
 
 * Show Security Rules
-	* `show rulebase security`
+	* `show rulebase security` (**`In configure mode`**)
+	* `show running security-policy` (**`In operational mode`**)
 * Delete any existing Security Rules
 	* `delete rulebase security rules <securityRuleName>`
 * Create new Security Rules
